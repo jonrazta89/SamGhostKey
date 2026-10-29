@@ -1,0 +1,15 @@
+# 统一文本文件规范化，避免跨平台（Windows/macOS/Linux）克隆时出现行尾“假脏”
+* text=auto
+
+# 构建/脚本类文件按平台约定强制换行
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+
+# 明确按二进制处理，避免误判为文本导致损坏
+*.keystore binary
+*.jks binary
+*.p12 binary
+*.png binary
+*.jpg binary
+*.webp binary

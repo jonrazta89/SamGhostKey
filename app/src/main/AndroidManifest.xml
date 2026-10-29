@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v1.0.9：KSUD_STAGE 需扫描全部已装应用找「带 libksud.so 的管理器」，
+         自编译 fork 包名不可预知，用 QUERY_ALL_PACKAGES 保证包可见性。 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <!-- Shizuku 13.x 的 API 权限：声明后才能走 Shizuku 授权流程（请求/校验权限） -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API" />
+
+    <!-- Android 11+ 需要显式声明才能查询对应包信息（否则 getPackageInfo 会因包可见性过滤抛 NameNotFoundException） -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+        <!-- Phase 6：Root 管理器检测（KsuResolver）需要的包可见性 -->
+        <package android:name="me.weishu.kernelsu" />
+        <package android:name="com.rifsxd.ksunext" />
+        <package android:name="me.weishu.kernelsu.next" />
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="io.github.vvb2060.magisk" />
+        <package android:name="me.bmax.apatch" />
+    </queries>
+
+    <application
+        android:name=".Cve98260Application"
+        android:largeHeap="true"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.CVE98260"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CVE98260">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <service
+            android:name=".shizuku.Cve98260UserService"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

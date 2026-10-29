@@ -1,0 +1,46 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Android
+app/build/
+app/.externalNativeBuild/
+app/.cxx/
+
+# 发布签名密钥（切勿提交）
+app/keystore/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# 发布产物（APK/zip 构建输出，体积大，不纳入版本库）
+dist/
+
+# 工具运行时目录（不纳入版本库）
+.workbuddy/
+
+# Gradle Kotlin 构建缓存
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# T1 本地 C 单测产物
+app/src/test/cpp/.build/
+
+# 构建日志（产物，不入库）
+build_release.log
+
+# 规划/分析文档（按需求不纳入版本库）
+docs/
