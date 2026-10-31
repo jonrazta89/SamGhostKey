@@ -27,13 +27,13 @@
 | Gradle / AGP | Gradle 9.8.2 / AGP 9.6.0-alpha02（预览） |
 | `compileSdk` / `targetSdk` / `minSdk` | 37（minor 2）/ 37 / 31 |
 | Kotlin | 2.5.0-Beta2（预发布） |
-| Java 字节码 | source/target 21，jvmTarget 21 |
+| Java 字节码 | source/target 27，jvmTarget 27（构建需 JDK 27；`java`/`lint` toolchain 均锁 27） |
 | NDK / CMake | CMake 3.22.1，`ANDROID_STL=none` |
 | Shizuku | 13.1.5 |
 | Jetpack Compose | BOM 2024.10.00（Material3） |
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 
-当前版本：**2.0.0-alpha02**（versionCode 20002，测试包名 `com.EternalTimes.GhostKey.test`）。
+当前版本：**2.0.0-alpha03**（versionCode 20003，测试包名 `com.EternalTimes.GhostKey.test`）。
 
 > Kotlin 2.5.0-Beta2 为预发布版，插件与 stdlib 走 JetBrains bootstrap 仓库（见 `settings.gradle.kts`）。
 
@@ -50,7 +50,7 @@
 
 ```bash
 ./gradlew assembleRelease
-# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-alpha02-test-arm64-v8a-release.apk
+# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-alpha03-test-arm64-v8a-release.apk
 ```
 
 ---

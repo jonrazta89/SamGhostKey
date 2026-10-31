@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "2.0.0-alpha02"
+val appVersionName = "2.0.0-alpha03"
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -55,7 +55,7 @@ android {
         applicationId = "com.EternalTimes.GhostKey.test"
         minSdk = 31
         targetSdk = 37
-        versionCode = 20002
+        versionCode = 20003
         versionName = appVersionName
         // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
         buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")
