@@ -30,6 +30,21 @@ fun loadSigningPassword(propName: String): String {
     )
 }
 
+/**
+ * 取当前构建所在提交的短 id（git rev-parse --short HEAD），供界面显示「版本 · 提交」。
+ * 非 git 环境或执行失败时回退 "unknown"，绝不阻断构建。
+ */
+fun gitShortCommit(): String = try {
+    val p = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootProject.rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val out = p.inputStream.bufferedReader().readText().trim()
+    if (p.waitFor() == 0 && out.isNotBlank()) out else "unknown"
+} catch (_: Exception) {
+    "unknown"
+}
+
 android {
     namespace = "com.EternalTimes.GhostKey"
     compileSdk = 37
@@ -42,6 +57,8 @@ android {
         targetSdk = 37
         versionCode = 20002
         versionName = appVersionName
+        // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
+        buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")
 
         externalNativeBuild {
             cmake {
@@ -81,6 +98,7 @@ android {
     buildFeatures {
         compose = true
         aidl = true
+        buildConfig = true
     }
 
     lint {

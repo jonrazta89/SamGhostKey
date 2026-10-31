@@ -76,6 +76,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalContext
+import com.EternalTimes.GhostKey.BuildConfig
 import com.EternalTimes.GhostKey.R
 import com.EternalTimes.GhostKey.device.DeviceBinding
 import com.EternalTimes.GhostKey.model.ShizukuStatus
@@ -636,13 +637,23 @@ private fun AppHeader(title: String, onRefresh: () -> Unit, onSettings: () -> Un
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = CvePalette.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = CvePalette.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME} · ${BuildConfig.GIT_COMMIT}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = CvePalette.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "$CVE_ID",
