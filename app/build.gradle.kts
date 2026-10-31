@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "1.1.10"
+val appVersionName = "2.0.0-alpha03"
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -30,16 +30,35 @@ fun loadSigningPassword(propName: String): String {
     )
 }
 
+/**
+ * 取当前构建所在提交的短 id（git rev-parse --short HEAD），供界面显示「版本 · 提交」。
+ * 非 git 环境或执行失败时回退 "unknown"，绝不阻断构建。
+ */
+fun gitShortCommit(): String = try {
+    val p = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootProject.rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val out = p.inputStream.bufferedReader().readText().trim()
+    if (p.waitFor() == 0 && out.isNotBlank()) out else "unknown"
+} catch (_: Exception) {
+    "unknown"
+}
+
 android {
     namespace = "com.EternalTimes.GhostKey"
-    compileSdk = 35
+    compileSdk = 37
+    compileSdkMinor = 2
 
     defaultConfig {
-        applicationId = "com.EternalTimes.GhostKey"
+        // 升级为 Gradle 9 / AGP 9.4 的测试构建：改用 .test 包名，可与正式版并存安装
+        applicationId = "com.EternalTimes.GhostKey.test"
         minSdk = 31
-        targetSdk = 35
-        versionCode = 23
+        targetSdk = 37
+        versionCode = 20003
         versionName = appVersionName
+        // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
+        buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")
 
         externalNativeBuild {
             cmake {
@@ -72,19 +91,23 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
     }
 
     buildFeatures {
         compose = true
         aidl = true
+        buildConfig = true
     }
 
     lint {
         // Cve98260UserService 是 Shizuku UserService（非标准 android.app.Service），
         // Manifest 中的声明是 Shizuku 模式要求，Instantiatable 检查在此属误报
         disable += "Instantiatable"
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(27))
+        }
     }
 
     packaging {
@@ -113,13 +136,20 @@ android {
 // AGP 9 内置 Kotlin：kotlinOptions DSL 已移除，改用顶层 kotlin{} 的 compilerOptions
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_27)
     }
 }
 
-// 产物文件名统一为 GhostKey-<版本>-*（如 GhostKey-1.1.2-arm64-v8a-release.apk）
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(27))
+    }
+}
+
+// 产物文件名：正式版 GhostKey-<版本>-*；本 .test 构建加 -test 标记避免与正式版撞名
+// （如 GhostKey-1.1.7-test-arm64-v8a-release.apk）
 base {
-    archivesName.set("GhostKey-$appVersionName")
+    archivesName.set("GhostKey-$appVersionName-test")
 }
 
 dependencies {

@@ -1,6 +1,7 @@
 package com.EternalTimes.GhostKey.data
 
 import android.content.Context
+import com.EternalTimes.GhostKey.tryQuietly
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
@@ -90,7 +91,7 @@ class RunLogStore(private val dir: File) {
             file = File(dir, "run-$stamp-$seq-$dup.log")
             dup++
         }
-        runCatching { file.createNewFile() }
+        tryQuietly { file.createNewFile() }
         active.add(file.name)
         val session = Session(file, runId, now)
         session.writeHeader(sanitize(device), sanitize(kernel), sanitize(profile))
@@ -114,7 +115,7 @@ class RunLogStore(private val dir: File) {
     /** 读取某次运行的日志正文（去掉头尾键值块）。IO 密集，请放在后台线程。 */
     fun readBody(meta: RunLogMeta): List<String> {
         val out = mutableListOf<String>()
-        runCatching {
+        tryQuietly {
             meta.file.useLines { seq ->
                 var inBody = false
                 for (raw in seq) {
@@ -155,14 +156,14 @@ class RunLogStore(private val dir: File) {
 
     fun delete(meta: RunLogMeta) {
         synchronized(this) { active.remove(meta.file.name) }
-        runCatching { meta.file.delete() }
+        tryQuietly { meta.file.delete() }
     }
 
     @Synchronized
     fun clear() {
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(EXT) } ?: return
         for (f in files) {
-            if (!active.contains(f.name)) runCatching { f.delete() }
+            if (!active.contains(f.name)) tryQuietly { f.delete() }
         }
     }
 
@@ -174,7 +175,7 @@ class RunLogStore(private val dir: File) {
         files.sortedBy { it.lastModified() }
             .dropLast(MAX_RUNS)
             .filterNot { active.contains(it.name) }
-            .forEach { runCatching { it.delete() } }
+            .forEach { tryQuietly { it.delete() } }
     }
 
     private fun parseMeta(file: File): RunLogMeta {
@@ -231,7 +232,7 @@ class RunLogStore(private val dir: File) {
     /** 逐字节读取前 [maxLines] 行（只读头部几十字节，不整文件读）。 */
     private fun readHeadLines(file: File, maxLines: Int): List<String> {
         val out = mutableListOf<String>()
-        runCatching {
+        tryQuietly {
             RandomAccessFile(file, "r").use { raf ->
                 val sb = StringBuilder()
                 var pos = 0L
@@ -258,7 +259,7 @@ class RunLogStore(private val dir: File) {
     /** 读文件末尾 4KB 再取最后 [maxLines] 行（用于收尾键值）。 */
     private fun readTailLines(file: File, maxLines: Int): List<String> {
         val out = mutableListOf<String>()
-        runCatching {
+        tryQuietly {
             RandomAccessFile(file, "r").use { raf ->
                 val len = raf.length()
                 val start = if (len > TAIL_BYTES) len - TAIL_BYTES else 0L
@@ -287,7 +288,7 @@ class RunLogStore(private val dir: File) {
         internal fun writeHeader(device: String, kernel: String, profile: String) {
             writer = runCatching { BufferedWriter(FileWriter(file, true)) }.getOrNull()
             val w = writer ?: return
-            runCatching {
+            tryQuietly {
                 w.write(K_RUN + runId); w.newLine()
                 w.write(K_START + startedAt); w.newLine()
                 if (device.isNotBlank()) { w.write(K_DEVICE + device); w.newLine() }
@@ -302,7 +303,7 @@ class RunLogStore(private val dir: File) {
             synchronized(this) {
                 if (finished) return
                 val w = writer ?: return
-                runCatching {
+                tryQuietly {
                     w.write("[" + hms() + "] " + message)
                     w.newLine()
                     w.flush()
@@ -317,7 +318,7 @@ class RunLogStore(private val dir: File) {
                 finished = true
                 val w = writer
                 if (w != null) {
-                    runCatching {
+                    tryQuietly {
                         w.write(BODY_END); w.newLine()
                         w.write(K_RESULT + result.name); w.newLine()
                         if (exitCode != null) { w.write(K_EXIT + exitCode); w.newLine() }

@@ -1,5 +1,7 @@
 # GhostKey — CVE-2026-98260 一键提权工具
 
+> 本分支为 **测试分支 `refactor/gradle-phase1`**：使用 `.test` 包名与预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta2），产物与正式版并存、互不覆盖。
+
 面向 **已授权安全研究 / 自用设备** 的 Android 一键提权工具。基于 **Shizuku + NDK Native**，把 exploit、内核偏移表与 OTA boot 镜像解析打包进单个 APK，手机上点击即可触发，无需 PC / 命令行。
 
 > ⚠️ **安全与法律责任**：仅用于授权环境下的安全研究与本人持有设备的合法测试。未经授权对他人设备提权、获取 root 或突破系统限制，可能违反所在地法律与平台条款；使用者自行承担一切风险，作者不对滥用行为负责。
@@ -22,21 +24,24 @@
 
 | 项目 | 版本 |
 |---|---|
-| Gradle / AGP | Gradle 9.8.2 / AGP 9.4.0 |
-| `compileSdk` / `targetSdk` / `minSdk` | 35 / 35 / 31 |
-| Kotlin | 2.4.21（JVM target 17） |
+| Gradle / AGP | Gradle 9.8.2 / AGP 9.6.0-alpha02（预览） |
+| `compileSdk` / `targetSdk` / `minSdk` | 37（minor 2）/ 37 / 31 |
+| Kotlin | 2.5.0-Beta2（预发布） |
+| Java 字节码 | source/target 27，jvmTarget 27（构建需 JDK 27；`java`/`lint` toolchain 均锁 27） |
 | NDK / CMake | CMake 3.22.1，`ANDROID_STL=none` |
 | Shizuku | 13.1.5 |
 | Jetpack Compose | BOM 2024.10.00（Material3） |
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 
-当前版本：**1.1.10**（versionCode 23，包名 `com.EternalTimes.GhostKey`）。
+当前版本：**2.0.0-alpha03**（versionCode 20003，测试包名 `com.EternalTimes.GhostKey.test`）。
+
+> Kotlin 2.5.0-Beta2 为预发布版，插件与 stdlib 走 JetBrains bootstrap 仓库（见 `settings.gradle.kts`）。
 
 ---
 
 ## 构建
 
-采用 **release** 构建（minify + shrinkResources，产物约 5.8 MB）。勿用 `assembleDebug`——debug 与 release 密钥不同，覆盖安装需先卸载。
+采用 **release** 构建（minify + shrinkResources，产物约 5.5 MB）。勿用 `assembleDebug`——debug 与 release 密钥不同，覆盖安装需先卸载。
 
 签名密钥位于 `app/keystore/release.keystore`（已 `.gitignore`，不进版本库）。密码二选一注入，**勿写回源码**：
 
@@ -45,7 +50,7 @@
 
 ```bash
 ./gradlew assembleRelease
-# 产物：app/build/outputs/apk/release/GhostKey-1.1.10-arm64-v8a-release.apk
+# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-alpha03-test-arm64-v8a-release.apk
 ```
 
 ---
@@ -92,7 +97,7 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
 
 ## 版本约定
 
-产物统一命名 `GhostKey-<ver>-arm64-v8a-release.apk`，构建后复制到仓库根 `release/`（已被 `.gitignore` 忽略，不进版本库），并以 **GitHub Release 附件**形式发布。
+测试分支产物命名 `GhostKey-<ver>-test-arm64-v8a-release.apk`，构建后复制到仓库根 `release/`（已被 `.gitignore` 忽略，不进版本库），并以 **GitHub Release 附件**形式发布。`.test` 包名与正式版并存，互不覆盖。
 
 ---
 

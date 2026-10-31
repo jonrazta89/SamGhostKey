@@ -10,6 +10,7 @@ import com.EternalTimes.GhostKey.device.PrivilegeGate
 import com.EternalTimes.GhostKey.ksu.KsudStage
 import com.EternalTimes.GhostKey.native.NativeContract
 import com.EternalTimes.GhostKey.native.NativeContract.Stage
+import com.EternalTimes.GhostKey.tryQuietly
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
@@ -109,10 +110,10 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                 runChain(profileBlob, callback)
             } catch (e: Exception) {
                 Log.e(TAG, "execution failed", e)
-                runCatching { callback?.onLog("<s> error: ${e.message}") }
+                tryQuietly { callback?.onLog("<s> error: ${e.message}") }
                 1
             }
-            runCatching { callback?.onComplete(code) }
+            tryQuietly { callback?.onComplete(code) }
             running.set(false)
         }, "c98260-runner").start()
     }
@@ -202,7 +203,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             if (pageOffsetPlan.trusted && pageOffsetPlan.value != null) {
                 pageOffset = DeviceProfilePolicy.formatHexU(pageOffsetPlan.value)
                 score = "device-profile"
-                runCatching {
+                tryQuietly {
                     File(workDir, RESULT_PAGE_OFFSET).writeText(pageOffset)
                     File(workDir, RESULT_PAGE_OFFSET_SCORE).writeText(score)
                 }
@@ -287,7 +288,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             return 0
         } finally {
             tailer.interrupt()
-            runCatching { tailer.join(800) }
+            tryQuietly { tailer.join(800) }
         }
     }
 
@@ -497,11 +498,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
         applyEnv(pb, env)
         val p = pb.start()
-        runCatching { writeBlob(p.outputStream, blob) }
+        tryQuietly { writeBlob(p.outputStream, blob) }
         return if (p.waitFor(timeoutSec, TimeUnit.SECONDS)) p.exitValue() else {
             val label = cmd.firstOrNull() ?: "step"
             Log.w(TAG, "step timed out after ${timeoutSec}s, left alive: $cmd")
-            runCatching {
+            tryQuietly {
                 logFile.appendText(
                     "<s> warn: $label still running after ${timeoutSec}s; " +
                         "left it alive on purpose (killing native processes can drop the pin " +
@@ -526,7 +527,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
         applyEnv(pb, env)
         val p = pb.start()
-        runCatching { writeBlob(p.outputStream, blob) }
+        tryQuietly { writeBlob(p.outputStream, blob) }
         return p
     }
 
@@ -544,7 +545,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             .redirectOutput(out)
         applyEnv(pb, env)
         val p = pb.start()
-        runCatching { p.outputStream.close() }
+        tryQuietly { p.outputStream.close() }
         if (!p.waitFor(timeoutSec, TimeUnit.SECONDS))
             Log.w(TAG, "capture timed out after ${timeoutSec}s, left alive: $cmd")
         return runCatching { out.readText() }.getOrDefault("")
@@ -626,7 +627,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             }
         }.onFailure {
             Log.w(TAG, "safe release failed", it)
-            runCatching { callback?.onLog("<s> warn: safe release failed: ${it.message}") }
+            tryQuietly { callback?.onLog("<s> warn: safe release failed: ${it.message}") }
         }
     }
 
@@ -1025,7 +1026,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
      */
     private fun cleanupStale(workDir: File): Int {
         val targets = mutableListOf(File(ROOT_SOCK), File(workDir, "rootd.stop"))
-        runCatching {
+        tryQuietly {
             workDir.listFiles()
                 ?.filter {
                     it.name.startsWith("root-") &&
@@ -1284,7 +1285,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                 Thread.currentThread().interrupt()
                 return
             } catch (_: Exception) {
-                runCatching { Thread.sleep(150) }
+                tryQuietly { Thread.sleep(150) }
             }
         }
     }
@@ -1297,7 +1298,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
 
     override fun destroy() {
         if (!running.get()) {
-            runCatching { exploitProcess?.destroy() }
+            tryQuietly { exploitProcess?.destroy() }
             kotlin.system.exitProcess(0)
         }
     }

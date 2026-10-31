@@ -76,6 +76,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalContext
+import com.EternalTimes.GhostKey.BuildConfig
 import com.EternalTimes.GhostKey.R
 import com.EternalTimes.GhostKey.device.DeviceBinding
 import com.EternalTimes.GhostKey.model.ShizukuStatus
@@ -86,6 +87,7 @@ import com.EternalTimes.GhostKey.native.NativeContract
 import com.EternalTimes.GhostKey.ui.theme.CvePalette
 import com.EternalTimes.GhostKey.viewmodel.ExploitViewModel
 import com.EternalTimes.GhostKey.viewmodel.ExploitUiState
+import com.EternalTimes.GhostKey.tryQuietly
 import java.util.Locale
 
 /** 漏洞编号，仅用于标题区展示。 */
@@ -635,13 +637,23 @@ private fun AppHeader(title: String, onRefresh: () -> Unit, onSettings: () -> Un
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = CvePalette.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = CvePalette.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME} · ${BuildConfig.GIT_COMMIT}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = CvePalette.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "$CVE_ID",
@@ -877,7 +889,7 @@ private fun openShizukuStore(context: Context) {
         val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download")).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        runCatching { context.startActivity(web) }
+        tryQuietly { context.startActivity(web) }
     }
 }
 
