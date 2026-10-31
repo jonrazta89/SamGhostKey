@@ -35,7 +35,8 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.EternalTimes.GhostKey"
+        // 升级为 Gradle 9 / AGP 9.4 的测试构建：改用 .test 包名，可与正式版并存安装
+        applicationId = "com.EternalTimes.GhostKey.test"
         minSdk = 31
         targetSdk = 35
         versionCode = 23
@@ -117,9 +118,10 @@ kotlin {
     }
 }
 
-// 产物文件名统一为 GhostKey-<版本>-*（如 GhostKey-1.1.2-arm64-v8a-release.apk）
+// 产物文件名：正式版 GhostKey-<版本>-*；本 .test 构建加 -test 标记避免与正式版撞名
+// （如 GhostKey-1.1.7-test-arm64-v8a-release.apk）
 base {
-    archivesName.set("GhostKey-$appVersionName")
+    archivesName.set("GhostKey-$appVersionName-test")
 }
 
 dependencies {
