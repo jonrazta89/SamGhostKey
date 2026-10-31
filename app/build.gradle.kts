@@ -32,13 +32,14 @@ fun loadSigningPassword(propName: String): String {
 
 android {
     namespace = "com.EternalTimes.GhostKey"
-    compileSdk = 36
+    compileSdk = 37
+    compileSdkMinor = 2
 
     defaultConfig {
         // 升级为 Gradle 9 / AGP 9.4 的测试构建：改用 .test 包名，可与正式版并存安装
         applicationId = "com.EternalTimes.GhostKey.test"
         minSdk = 31
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 20001
         versionName = appVersionName
 

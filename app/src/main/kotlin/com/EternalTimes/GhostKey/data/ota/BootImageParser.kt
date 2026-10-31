@@ -239,7 +239,7 @@ class BootImageParser {
         val parts = ArrayList<ByteArray>()
         var pos = 4
         while (pos + 4 <= kernel.size) {
-            var blockSize = u32(kernel, pos).toInt()
+            var blockSize = u32(kernel, pos)
             pos += 4
             if (blockSize <= 0) break
             if (pos + blockSize > kernel.size) blockSize = kernel.size - pos
