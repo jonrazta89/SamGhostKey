@@ -139,7 +139,28 @@ int ksu_write_takeover_script(const char *path, char ksuds[][512], int n_ksuds,
 	 * which uid is authorized. Reading them here (as uid 0, inside rootd) is
 	 * also the only way to see them at all: /data/adb is 0700 root, so the
 	 * shell-uid side cannot stat them.
+	 *
+	 * WAIT for them: `late-load` daemonizes BEFORE it does the install, so
+	 * the install runs in the background child and is usually NOT finished
+	 * when the late-load command returns. Checking immediately produced a
+	 * false "su replacement target missing" (2026-10-31 real device: the
+	 * module was already loaded, so late-load went straight to install and
+	 * the check ran before it finished).
+	 *
+	 * Only wait when the module actually registered: if load_module failed,
+	 * late-load returns early (late_load.rs:67) and never reaches
+	 * utils::install() (late_load.rs:82), so nothing would ever show up and
+	 * we would just burn POLL_TRIES seconds for nothing.
 	 */
+	fprintf(f, "wait_install() {\n");
+	fprintf(f, "  i=0\n");
+	fprintf(f, "  while [ $i -lt $POLL_TRIES ]; do\n");
+	fprintf(f, "    if [ -e /data/adb/ksu/bin/ksud ] || [ -e /data/adb/ksud ]; then return; fi\n");
+	fprintf(f, "    sleep 1\n");
+	fprintf(f, "    i=$((i+1))\n");
+	fprintf(f, "  done\n");
+	fprintf(f, "}\n");
+	fprintf(f, "if [ \"$LIVE\" = yes ]; then wait_install; fi\n");
 	fprintf(f, "for P in /data/adb/ksu/bin/ksud /data/adb/ksud; do\n");
 	fprintf(f, "  if [ -e \"$P\" ]; then\n");
 	fprintf(f, "    echo \"[ksu] ksud_installed=$P size=$(stat -c %%s \"$P\" 2>/dev/null)\" >> \"$LOG\"\n");

@@ -381,6 +381,12 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             workDir, env, logFile, profileBlob, KSU_TIMEOUT_SEC,
         )
         val moduleLive = modulesHasKernelsu()
+        if (ksuAllowShellRequested(workDir)) {
+            callback?.onLog(
+                "<s> ksu allow_shell=1 (module-load param; only effective when the module is " +
+                    "RE-loaded — one already in /proc/modules keeps its old params)",
+            )
+        }
         //
         // su 探测走**两条通道**（见 suProbe / suProbeAppUid）：
         //   · shell 通道 —— 本 UserService 的 uid 2000，需要 allow_shell=1；
@@ -430,7 +436,32 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             put("PC98260_STOP_FILE", stopFilePath)
             ksud?.let { put("CVE98260_KSUD", it.absolutePath) }
             put("CVE98260_KSU_LOG", File(workDir, "ksu_takeover.log").absolutePath)
+            // allow_shell 开关：默认关，需要时由设备侧的小文件打开（见 ksuAllowShellRequested）
+            put("CVE98260_KSU_ALLOW_SHELL", if (ksuAllowShellRequested(workDir)) "1" else "0")
         }
+
+    /**
+     * `allow_shell` 开关（**默认关**）。
+     *
+     * `allow_shell=1` 是上游 late-load 的**模块加载参数**，含义「Always allow shell
+     * to get root permission」—— 放行 shell(uid 2000)，也就是本 UserService 的身份。
+     * **只在模块首次加载时生效**：上游 `late_load::run` 开头就检查 `has_kernelsu()`，
+     * 已加载则跳过 `load_module`，参数无处可施。所以即便打开，也必须**重新加载
+     * 模块**才见效。
+     *
+     * 为什么放在设备侧文件而不是 App 的 SharedPreferences：本 UserService 跑在
+     * **Shizuku 进程空间（uid 2000）**，读不到 App 私有目录里的文件；而
+     * `/data/local/tmp/cve98260-app` 是双方都能读写的既有工作目录。
+     *
+     * 打开方式：
+     * ```
+     * adb shell 'echo 1 > /data/local/tmp/cve98260-app/allow_shell'
+     * ```
+     * 关闭：删掉该文件（或写入 0）。
+     */
+    private fun ksuAllowShellRequested(workDir: File): Boolean =
+        runCatching { File(workDir, "allow_shell").readText().trim() == "1" }
+            .getOrDefault(false)
 
     private fun applyEnv(pb: ProcessBuilder, env: Map<String, String>) {
         pb.environment().putAll(env)

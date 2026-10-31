@@ -35,6 +35,29 @@ static void check(int ok, const char *expr, int line)
 
 #define CHECK(cond) check((cond) != 0, #cond, __LINE__)
 
+/*
+ * Count occurrences of a substring.
+ *
+ * Needed because the generated script is written in TEXT mode on Windows, so
+ * its line endings are CRLF here but LF on the device. Any assertion that
+ * depends on a bare "\n" would therefore pass on device and fail in the host
+ * test (or the other way round) — count occurrences instead.
+ */
+static int count_occurrences(const char *hay, const char *needle)
+{
+	int n = 0;
+	size_t len = strlen(needle);
+	const char *p = hay;
+
+	if (!len)
+		return 0;
+	while ((p = strstr(p, needle)) != NULL) {
+		n++;
+		p += len;
+	}
+	return n;
+}
+
 int main(void)
 {
 	char ksuds[3][512];
@@ -95,6 +118,14 @@ int main(void)
 	CHECK(strstr(buf, "ksud_installed=$P") != NULL);
 	CHECK(strstr(buf, "/data/adb/ksu/bin/ksud") != NULL);
 	CHECK(strstr(buf, "/data/adb/ksud") != NULL);
+	/* late-load 先 daemonize 再 install —— 安装产物必须等，不能查完就报缺失 */
+	CHECK(strstr(buf, "wait_install() {") != NULL);
+	/* 定义 + 调用各一次。这里不能断言 "wait_install\n"：宿主上脚本是 TEXT 模式
+	 * 写出的，行尾是 \r\n，卡行尾会在宿主上假失败、在设备上真通过。 */
+	CHECK(count_occurrences(buf, "wait_install") == 2);
+	CHECK(strstr(buf, "[ -e /data/adb/ksu/bin/ksud ]") != NULL);
+	/* 模块没起来时 late-load 直接失败、不会 install —— 此时不该空等 6 秒 */
+	CHECK(strstr(buf, "if [ \"$LIVE\" = yes ]; then wait_install; fi") != NULL);
 
 	/* ---- allow_shell 默认关闭；打开时给 late-load 传 --allow-shell ---- */
 	CHECK(strstr(buf, "ALLOW_SHELL=0") != NULL);

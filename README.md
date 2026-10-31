@@ -36,7 +36,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 | 产物命名 | `GhostKey-<版本>-arm64-v8a-release.apk` |
 
-当前版本：**1.1.4**（versionCode 17，包名 `com.EternalTimes.GhostKey`）。
+当前版本：**1.1.8**（versionCode 21，包名 `com.EternalTimes.GhostKey`）。
 
 ---
 
@@ -66,7 +66,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 ```
 
 产物路径：`app/build/outputs/apk/release/GhostKey-1.1.4-arm64-v8a-release.apk`，
-交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.4-arm64-v8a-release.apk`）。
+交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.8-arm64-v8a-release.apk`）。
 
 ---
 
@@ -242,6 +242,8 @@ adb shell ls -l /data/local/tmp/cve98260-app/kallsyms.txt
 | exploit（提权） | `[cred] answer uid=0 euid=0 gid=0 egid=0` | 出现的是 `uid=2000` → 伪造 cred 的字段偏移或 task 地址不对 |
 | exploit（收尾） | `[cred] child ack: daemon`<br>`[cred] main process exiting, child becomes daemon`<br>`[rootd] listening at … pid=…`<br>`C98260_ROOTD_READY=1` | 主进程要带 `--daemon-exit` 才会走这条路径；否则会驻留等待子进程（见下） |
 | verify | `uid=0(root)` | 前面对但没 root → 临时 root 通道没建立 |
+| KSU 接管 | `[ksu] kmi=… candidates=N allow_shell=0`<br>`[ksu] live=yes ksud=…`<br>`[ksu] ksud_installed=/data/adb/ksu/bin/ksud size=…` | `live=no` → late-load 没把模块注册起来；`ksud_installed` 缺失 → 内核替换 `su` 用的用户态组件还没装好（v1.1.8 起会等 6 秒） |
+| KSU 的 su | `independent su (app uid NNNNN) => uid=0(root) … context=u:r:ksu:s0` | 报 `su: inaccessible or not found` → **该 uid 没被授权**，去 KSU 管理器「超级用户」里授权本 App |
 
 > **`--daemon-exit` 是宿主模型**：不带这个参数时主进程会一直驻留等待 cred 子进程退出
 > （子进程要一直持有被伪造的 cred 页），这是参考实现的语义，不是卡死。App 侧的
@@ -349,6 +351,13 @@ v1.1.6 优化后实测 **20 秒**（`16:06:00 → 16:06:20`），逐段拆开：
 | KSU 接管 | 4 s | 4 s |
 | **合计** | **39 s** | **20 s** |
 
+> **为什么同一版会有 20 s / 30 s 的波动？** 不是版本回退，是**伪造 cred 第一次没打中**。
+> 落点 `off` 是随机偏移（伪造的 cred 必须正好落在 child 的 `task->cred` 那个
+> 8 KiB slab 页里的相同偏移上），命中概率不是 100%。第一轮失败会重跑一轮，
+> 每轮约 9–10 秒 —— 所以「20 s → 30 s」通常就是**多了一轮重试**。
+> 日志里看 `[cred] plant attempt 1/12` 与 `[cred] plant attempt 2/12` 就能确认。
+> 跑之前先 `adb reboot` 可以清掉残留的 rootd / cred holder，减少这一轮翻车。
+
 ### ① raw 采集不再空转到超时（`calib.c`）
 
 `trace_pipe_raw` 是**活管道**：per-CPU 环形缓冲排空后不会 EOF，只能靠超时收尾。
@@ -414,8 +423,20 @@ v1.1.6 优化后实测 **20 秒**（`16:06:00 → 16:06:20`），逐段拆开：
 
 > `allow_shell` 是**模块加载参数**，只在模块**首次加载**时生效 ——
 > `late_load::run` 开头就检查 `has_kernelsu()`，已加载则跳过 `load_module`，
-> 参数无处可施。所以默认关闭；需要时用 `CVE98260_KSU_ALLOW_SHELL=1` 打开，
-> 且必须**重新加载模块**才生效。
+> 参数无处可施。所以**默认关闭**。
+>
+> **打开方式（v1.1.8 起）**：在设备上写一个开关文件：
+>
+> ```bash
+> adb shell 'echo 1 > /data/local/tmp/cve98260-app/allow_shell'
+> ```
+>
+> 关掉就删掉该文件（或写入 `0`）。开关放在设备侧而不是 App 的 SharedPreferences，
+> 是因为 UserService 跑在 **Shizuku 进程（uid 2000）**，读不到 App 私有目录。
+>
+> ⚠️ **已加载的模块不会因为这个开关而改变参数。** 要让它真正生效，必须让模块
+> 重新加载（先卸载/重启，再走一次 late-load）。本工具在 `allow_shell=1` 时会
+> 明确打一行提示，避免「开关开了却不生效」的困惑。
 
 另外：**KernelSU 没有 Magisk 那种常驻 daemon。** `late-load` 自带的后台进程跑完
 stage 脚本、重启管理器之后就退出了；用户态组件由 `late_load::run` 内部的
@@ -423,6 +444,13 @@ stage 脚本、重启管理器之后就退出了；用户态组件由 `late_load
 **内核替换 su 用的就是它**。旧实现额外 `nohup ksud &` 起的那一套用的是管理器里
 那个陈旧构建（只认 `-h`/`-V`），于是永远报
 `ksud daemon not visible in /proc; ksud said: Options: -h, --help`。
+
+> `utils::install()` 是在 `daemonize()` **之后**的子进程里跑的（上游
+> `late_load.rs:82`），所以 `late-load` 命令**返回时安装往往还没完成**。
+> v1.1.7 直接查 `/data/adb/ksu/bin/ksud` 会假报
+> `su replacement target missing`；v1.1.8 改成轮询等待（最多 6 秒），
+> 并且只在模块确实注册了（`LIVE=yes`）时才等 —— 模块没起来时 `late-load`
+> 会提前 return，根本不会去装，空等毫无意义。
 
 ### ⚠️ 关于提权后的 SELinux 状态
 
