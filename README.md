@@ -1,6 +1,6 @@
 # GhostKey — CVE-2026-98260 一键提权工具
 
-> 本分支为 **测试分支 `refactor/gradle-phase1`**：使用 `.test` 包名与预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta1），产物与正式版并存、互不覆盖。
+> 本分支为 **测试分支 `refactor/gradle-phase1`**：使用 `.test` 包名与预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta2），产物与正式版并存、互不覆盖。
 
 面向 **已授权安全研究 / 自用设备** 的 Android 一键提权工具。基于 **Shizuku + NDK Native**，把 exploit、内核偏移表与 OTA boot 镜像解析打包进单个 APK，手机上点击即可触发，无需 PC / 命令行。
 
@@ -25,22 +25,23 @@
 | 项目 | 版本 |
 |---|---|
 | Gradle / AGP | Gradle 9.8.2 / AGP 9.6.0-alpha02（预览） |
-| `compileSdk` / `targetSdk` / `minSdk` | 36 / 36 / 31 |
-| Kotlin | 2.5.0-Beta1（JVM target 17，预发布） |
+| `compileSdk` / `targetSdk` / `minSdk` | 37（minor 2）/ 37 / 31 |
+| Kotlin | 2.5.0-Beta2（预发布） |
+| Java 字节码 | source/target 21，jvmTarget 21 |
 | NDK / CMake | CMake 3.22.1，`ANDROID_STL=none` |
 | Shizuku | 13.1.5 |
 | Jetpack Compose | BOM 2024.10.00（Material3） |
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 
-当前版本：**2.0.0-alpha01**（versionCode 20001，测试包名 `com.EternalTimes.GhostKey.test`）。
+当前版本：**2.0.0-alpha02**（versionCode 20002，测试包名 `com.EternalTimes.GhostKey.test`）。
 
-> Kotlin 2.5.0-Beta1 为预发布版，插件与 stdlib 走 JetBrains bootstrap 仓库（见 `settings.gradle.kts`）。
+> Kotlin 2.5.0-Beta2 为预发布版，插件与 stdlib 走 JetBrains bootstrap 仓库（见 `settings.gradle.kts`）。
 
 ---
 
 ## 构建
 
-采用 **release** 构建（minify + shrinkResources，产物约 5.8 MB）。勿用 `assembleDebug`——debug 与 release 密钥不同，覆盖安装需先卸载。
+采用 **release** 构建（minify + shrinkResources，产物约 5.5 MB）。勿用 `assembleDebug`——debug 与 release 密钥不同，覆盖安装需先卸载。
 
 签名密钥位于 `app/keystore/release.keystore`（已 `.gitignore`，不进版本库）。密码二选一注入，**勿写回源码**：
 
@@ -49,7 +50,7 @@
 
 ```bash
 ./gradlew assembleRelease
-# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-alpha01-test-arm64-v8a-release.apk
+# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-alpha02-test-arm64-v8a-release.apk
 ```
 
 ---
