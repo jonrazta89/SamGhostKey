@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "2.0.0-alpha01"
+val appVersionName = "2.0.0-alpha02"
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -40,7 +40,7 @@ android {
         applicationId = "com.EternalTimes.GhostKey.test"
         minSdk = 31
         targetSdk = 37
-        versionCode = 20001
+        versionCode = 20002
         versionName = appVersionName
 
         externalNativeBuild {
@@ -74,8 +74,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     buildFeatures {
@@ -115,7 +115,7 @@ android {
 // AGP 9 内置 Kotlin：kotlinOptions DSL 已移除，改用顶层 kotlin{} 的 compilerOptions
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
 
