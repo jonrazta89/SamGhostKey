@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.lang.Process as JavaProcess
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -64,6 +65,14 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         private const val INJECT_TIMEOUT_SEC = 300L
         private const val VERIFY_TIMEOUT_SEC = 30L
         private const val KSU_TIMEOUT_SEC = 180L
+
+        /**
+         * App 通道 su 探测的等待上限（毫秒）。
+         *
+         * App 侧每个候选自己也有 4s 上限、5 个候选最坏 ~20s，所以这里留 25s；
+         * 超时按「探测失败」处理，不能把 KSU 阶段挂死。
+         */
+        private const val SU_APP_PROBE_TIMEOUT_MS = 25_000L
 
         /**
          * 一个子步骤超时的返回码（区别于正常的非 0 退出码）。
@@ -258,7 +267,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                 callback?.onLog("<s> skip KSU takeover (no ksud)")
                 false
             } else {
-                ksuTakeover(nativeLib, workDir, env, logFile, profileBlob, ksud, callback)
+                ksuTakeover(nativeLib, workDir, env, logFile, profileBlob, callback)
             }
 
             //
@@ -296,7 +305,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         env: Map<String, String>,
         callback: ICve98260Callback?,
     ): Int {
-        if (ksuRootLive(workDir, env)) {
+        if (ksuRootLive(workDir, env, callback)) {
             callback?.onLog(
                 "<s> detected residual native process(es) " +
                     "[${stale.joinToString(",")}] but KernelSU already provides root",
@@ -364,7 +373,6 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         env: Map<String, String>,
         logFile: File,
         profileBlob: ByteArray?,
-        ksud: File,
         callback: ICve98260Callback?,
     ): Boolean {
         callback?.onProgress(stageIndex(Stage.KSU), "running")
@@ -373,20 +381,31 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             workDir, env, logFile, profileBlob, KSU_TIMEOUT_SEC,
         )
         val moduleLive = modulesHasKernelsu()
-        val probe0 = suProbe(workDir, env)
-        var independentSu = suWorks(probe0)
-        callback?.onLog("<s> independent su => ${probe0.ifEmpty { "<empty>" }}")
-        if (moduleLive) {
-            startKsudDaemon(ksud, workDir, env, callback)
-            val probe1 = suProbe(workDir, env)
-            if (!independentSu && suWorks(probe1)) {
-                independentSu = true
-                callback?.onLog("<b> su became available after ksud daemon start")
-            }
-            if (probe1.isNotEmpty() && probe1 != probe0) {
-                callback?.onLog("<s> independent su (after daemon) => $probe1")
-            }
+        //
+        // su 探测走**两条通道**（见 suProbe / suProbeAppUid）：
+        //   · shell 通道 —— 本 UserService 的 uid 2000，需要 allow_shell=1；
+        //   · App 通道   —— App 自己的 uid，用户在 KSU 管理器里授权的就是它。
+        // 2026-10-31 真机：只探 shell 通道，KSU 明明在工作也报「没有 su」。
+        //
+        val probeShell = suProbe(workDir, env)
+        val probeApp = suProbeAppUid(callback)
+        val independentSu = suWorks(probeShell) || suWorks(probeApp)
+        callback?.onLog("<s> independent su (shell uid) => ${probeShell.ifEmpty { "<empty>" }}")
+        callback?.onLog(
+            "<s> independent su (app uid ${appUid()}) => ${probeApp.ifEmpty { "<empty>" }}",
+        )
+        if (independentSu) {
+            val via = if (suWorks(probeApp)) "app uid ${appUid()}" else "shell uid"
+            callback?.onLog("<b> KernelSU su available via $via")
+        } else {
+            callback?.onLog(
+                "<s> hint: KernelSU 的 superuser 授权按 uid 管理 —— 请在 KernelSU 管理器" +
+                    " →「超级用户」中授权 ${context.packageName}，" +
+                    " 或用 allow_shell=1 重新加载模块以放行 shell(uid 2000)",
+            )
         }
+        // 接管脚本里 late-load 装出来的 userspace 组件 —— 内核替换 su 用的就是它
+        reportKsudInstall(workDir, callback)
         val ksuLive = moduleLive || independentSu
         callback?.onProgress(stageIndex(Stage.KSU), if (ksuLive) "ok" else "failed")
         callback?.onLog(
@@ -795,7 +814,21 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     }.getOrNull()
 
 
-    /** 跑一次 `su -c id` 并返回原始输出；失败返回空串。 */
+    /**
+     * su 探测 —— **shell 通道**（本 UserService 的身份，uid 2000）。
+     *
+     * KernelSU 的 su 不是 PATH 里的文件：内核在 execve 阶段把 su 替换成 ksud
+     * （上游 v3.3.1 userspace/ksud/src/cli.rs:501 —— "the kernel executes su with
+     * argv[0] = 'su' and replace it with us"），而且**只对已授权的 uid 替换**；
+     * 未授权时 execve 返回 ENOENT，shell 就报 "su: inaccessible or not found"。
+     *
+     * 授权按 uid 管理，所以这条通道只有两种情况能拿到 su：
+     *   · 模块带 allow_shell=1 加载（上游 late_load.rs 的 --allow-shell 参数）；
+     *   · 管理器里把 uid 2000 也授了权（少见）。
+     *
+     * 2026-10-31 真机教训：只用这条通道探测，KSU 明明在工作也永远得到
+     * "su: inaccessible or not found" —— 因为用户在管理器里授权的是 App 的 uid。
+     */
     private fun suProbe(workDir: File, env: Map<String, String>): String =
         runCatching {
             runCapture(
@@ -803,6 +836,33 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                 workDir, env, VERIFY_TIMEOUT_SEC,
             )
         }.getOrDefault("").trim()
+
+    /**
+     * su 探测 —— **App 通道**（App 自身 uid）。
+     *
+     * 回调到 App 进程里试：KernelSU 的 superuser 授权是按 uid 管的，用户在
+     * 管理器里授权的是本 App 的 uid，**只有这条通道吃得到那条授权**。
+     *
+     * 走 Binder 同步调用：App 进程是唯一持有该 uid 的进程。带超时，避免 App
+     * 进程无响应时把 KSU 阶段挂死。
+     */
+    private fun suProbeAppUid(callback: ICve98260Callback?): String {
+        if (callback == null) return ""
+        return runCatching {
+            val pool = Executors.newSingleThreadExecutor()
+            try {
+                pool.submit<String> { callback.probeSu() }
+                    .get(SU_APP_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            } finally {
+                pool.shutdownNow()
+            }
+        }.getOrDefault("").trim()
+    }
+
+    /** 本 App 的 uid（KSU 的授权就是按它匹配的）。取不到返回 -1。 */
+    private fun appUid(): Int = runCatching {
+        context.packageManager.getApplicationInfo(context.packageName, 0).uid
+    }.getOrDefault(-1)
 
     /**
      * 判据：要么拿到 uid=0(root)，要么上下文落在 KSU 自己的域。
@@ -824,9 +884,17 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
      *
      * 与 safeRelease 的 independentRoot 判据保持一致（两者皆需 uid + ksu 域）。
      */
-    private fun ksuRootLive(workDir: File, env: Map<String, String>): Boolean {
+    private fun ksuRootLive(
+        workDir: File,
+        env: Map<String, String>,
+        callback: ICve98260Callback?,
+    ): Boolean {
         val probe = suProbe(workDir, env)
-        return probe.contains("uid=0(root)") && probe.contains("context=u:r:ksu:s0")
+        if (probe.contains("uid=0(root)") && probe.contains("context=u:r:ksu:s0")) return true
+        // App 通道也算：用户在 KSU 管理器里授权的是 App 的 uid，shell 通道
+        // （uid 2000）看不到那条授权 —— 只探 shell 会把「已经可用」误判成「不可用」。
+        val appProbe = suProbeAppUid(callback)
+        return appProbe.contains("uid=0(root)") && appProbe.contains("context=u:r:ksu:s0")
     }
 
     /** 取 JavaProcess 的 pid：API 33+ 有 Process.pid()，更低版本走实现类私有字段。 */
@@ -839,59 +907,41 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     }.getOrNull()
 
     /**
-     * 由宿主（shell, uid 2000）启动 ksud 守护，与 PC 参考实现 run.py:572 一致：
-     * `nohup /data/local/tmp/ksud >/dev/null 2>&1 &`。
+     * 汇报 late-load 装出来的 userspace 组件。
      *
-     * 关键点：**绝不能在 rootd 内启动**。rootd 以 uid 0 + 注入的伪造 cred 运行
-     * （SELinux u:object_r:unlabeled:s0），在它里面起的守护会继承那份 cred；
-     * 而那份 cred 躺在内核已释放的页里，守护从此不可杀、且任何页回收都会踩空。
-     * PC 端从头到尾都是让 adb shell 去起 ksud，所以它的守护是正常 cred。
+     * 关键事实（上游 KernelSU v3.3.1 userspace/ksud/src/late_load.rs:82）：
+     * late-load 内部会调 `utils::install()`，把 ksud 装到 `/data/adb/ksud` 并建
+     * `/data/adb/ksu/bin/ksud` 软链 —— 而这正是**内核在 execve 时替换 su 用的
+     * 那个二进制**（cli.rs:501）。
+     *
+     * 所以旧实现「宿主再 `nohup ksud &` 起一个 daemon」是多余的，而且用的是
+     * 管理器里那个陈旧构建（只认 -h/-V），必然起不来 —— 这正是
+     * "ksud daemon not visible in /proc; ksud said: Options: -h, --help" 的来源。
+     * KernelSU 也没有 Magisk 那种常驻 daemon：late-load 自带的后台进程跑完
+     * stage 脚本、重启管理器之后就退出了。
+     *
+     * /data/adb 是 0700 root，shell 身份读不到，所以由接管脚本（rootd, uid 0）
+     * 把结果写进日志，这里只解析。
      */
-    private fun startKsudDaemon(
-        ksud: File?,
-        workDir: File,
-        env: Map<String, String>,
-        callback: ICve98260Callback?,
-    ) {
-        if (ksud == null) {
-            callback?.onLog("<s> warn: ksud path unknown, daemon not started")
-            return
+    private fun reportKsudInstall(workDir: File, callback: ICve98260Callback?) {
+        val text = runCatching { File(workDir, "ksu_takeover.log").readText() }.getOrDefault("")
+        val installed = Regex("\\[ksu\\] ksud_installed=(\\S+)")
+            .findAll(text).map { it.groupValues[1] }.toList()
+        val used = Regex("\\[ksu\\] ksud_used=(\\S*)").find(text)?.groupValues?.get(1)
+        if (!used.isNullOrBlank()) {
+            callback?.onLog("<s> takeover used ksud: $used")
         }
-        if (ksudDaemonPids(ksud).isNotEmpty()) {
-            callback?.onLog("<s> ksud daemon already running")
-            return
-        }
-        val ksudLog = File(workDir, "ksud.log")
-        val started = runCatching {
-            val pb = ProcessBuilder(
-                "/system/bin/sh", "-c",
-                "nohup ${ksud.absolutePath} > ${ksudLog.absolutePath} 2>&1 &",
+        if (installed.isNotEmpty()) {
+            callback?.onLog(
+                "<b> ksud userspace installed: ${installed.joinToString(", ")}" +
+                    " (this is what the kernel substitutes for 'su')",
             )
-            pb.directory(workDir)
-            applyEnv(pb, env)
-            pb.redirectErrorStream(true)
-            pb.start()
-            true
-        }.getOrDefault(false)
-        Thread.sleep(1000)
-        val pids = ksudDaemonPids(ksud)
-        callback?.onLog(
-            when {
-                pids.isNotEmpty() ->
-                    "<b> ksud daemon started with normal shell cred (pid=${pids.joinToString(",")})"
-                started -> {
-                    val tail = runCatching {
-                        ksudLog.readLines().filter { it.isNotBlank() }.takeLast(3)
-                            .joinToString(" | ")
-                    }.getOrDefault("")
-                    "<s> warn: ksud daemon not visible in /proc" +
-                        (if (tail.isNotEmpty()) "; ksud said: $tail"
-                         else "; ksud.log is empty (it exited before printing anything)")
-                }
-                else ->
-                    "<s> warn: failed to spawn ksud daemon"
-            },
-        )
+        } else {
+            callback?.onLog(
+                "<s> warn: ksud userspace component not reported by the takeover script" +
+                    " (/data/adb/ksu/bin/ksud, /data/adb/ksud); su replacement target missing",
+            )
+        }
     }
 
     /**
@@ -1025,21 +1075,28 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
      * 不动原生 C：ksu.c 大小校验只打日志、不拦截。
      */
     private fun resolveKsud(workDir: File, callback: ICve98260Callback?): File? {
-        // 内置 ksud **永远**先解压：它是与本 APK 的 KMI 集配套的构建
-        // （6402736 B，sha256 049491e2b4cc0a6c...）。
-        // 2026-10-31 真机教训：管理器里的 libksud.so（4990848 B）是旧版本，
-        // 只认 -h/-V，既不支持 late-load 也不支持 daemon —— 单独用它接管会
-        // 得到「模块加载了但没有 su」。现在两个候选都交给原生 ksu.c 的候选
-        // 阶梯，由脚本按顺序试，直到某个既能注册模块、又能把 daemon 拉起来。
-        extractKsud(workDir)?.let {
+        //
+        // 内置 ksud **永远**先解压，并且是**首选候选**：
+        //   6402736 B，sha256 049491e2b4cc0a6c...，版本串 32680 / 3.3.1
+        //   —— 与设备上那个 KSU 管理器 v3.3.1 (32680-5) **同版本**，late-load
+        //   才加载得动（2026-10-31 真机：late-load 成功、模块注册成功）。
+        //
+        // 2026-10-31 真机教训：管理器里的 libksud.so（4990848 B）是个只认
+        // -h/-V 的陈旧构建，late-load 只会打印一段帮助后退出 —— 拿它当首选就
+        // 会得到「模块加载了但没有 su」。它仍会被暂存到 /data/local/tmp/ksud，
+        // 作为原生候选阶梯里的**兜底**。
+        //
+        val bundled = extractKsud(workDir)
+        if (bundled != null) {
             callback?.onLog(
-                "<s> bundled ksud ready: ${it.absolutePath} (size=${it.length()})",
+                "<s> bundled ksud ready: ${bundled.absolutePath} (size=${bundled.length()})",
             )
         }
+        var staged: File? = null
         val scanned = runCatching { KsudStage.scanManagerLib(context.packageManager) }.getOrNull()
         if (scanned != null) {
             val (lib, pkg) = scanned
-            val staged = runCatching {
+            staged = runCatching {
                 val target = File(KsudStage.TARGET)
                 lib.copyTo(target, overwrite = true)
                 target.setExecutable(true, false)
@@ -1047,12 +1104,12 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             }.getOrNull()
             if (staged != null && staged.length() > 0L) {
                 callback?.onLog(
-                    "<s> ksud staged from manager [$pkg]: ${staged.absolutePath} " +
+                    "<s> manager ksud staged as fallback candidate [$pkg]: ${staged.absolutePath} " +
                         "(size=${staged.length()})",
                 )
-                return staged
+            } else {
+                callback?.onLog("<s> warn: manager lib found [$pkg] but staging failed; trying script")
             }
-            callback?.onLog("<s> warn: manager lib found [$pkg] but staging failed; trying script")
         } else {
             callback?.onLog("<s> no manager with libksud.so found via PackageManager; trying script")
         }
@@ -1076,19 +1133,20 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                 val f = File(KsudStage.TARGET)
                 if (f.isFile && f.length() > 0L) {
                     f.setExecutable(true, false)
+                    staged = f
                     callback?.onLog(
                         "<s> ksud staged via script: md5=${scriptOutcome.md5} size=${scriptOutcome.size}",
                     )
-                    return f
+                } else {
+                    callback?.onLog("<s> warn: ksud stage reported ok but file missing; using bundled")
                 }
-                callback?.onLog("<s> warn: ksud stage reported ok but file missing; using bundled")
             }
             is KsudStage.Outcome.Fail ->
                 callback?.onLog("<s> warn: ksud stage fail (${scriptOutcome.reason}); using bundled ksud")
             null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
         }
 
-        return extractKsud(workDir)
+        return bundled ?: staged
     }
 
     /** 从 assets/ksu/ksud 解压可执行文件；不存在返回 null。 */

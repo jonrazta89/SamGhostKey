@@ -338,14 +338,16 @@ app/src/main/assets/device_profiles/
 
 ## 越狱流程与耗时优化
 
-2026-10-31 真机全链路首次跑通耗时 **39 秒**（`15:03:37 → 15:04:16`），逐段拆开：
+2026-10-31 真机全链路首次跑通耗时 **39 秒**（`15:03:37 → 15:04:16`），
+v1.1.6 优化后实测 **20 秒**（`16:06:00 → 16:06:20`），逐段拆开：
 
-| 阶段 | 首次耗时 | 优化后（预计） |
+| 阶段 | 首次耗时 | v1.1.6 实测 |
 |---|---|---|
-| `calib_a` 第一段（k_itimer 探针 + 解 slide） | 11 s | ~5 s |
+| `calib_a` 第一段（k_itimer 探针 + 解 slide） | 11 s | **3 s** |
 | `calib_b`（`page_offset` 扫描） | 9 s | **0 s**（命中机型配置时跳过） |
-| `exploit` 注入（SELinux 翻转 + 伪造 cred） | 15 s | 15 s |
+| `exploit` 注入（SELinux 翻转 + 伪造 cred） | 15 s | 12 s |
 | KSU 接管 | 4 s | 4 s |
+| **合计** | **39 s** | **20 s** |
 
 ### ① raw 采集不再空转到超时（`calib.c`）
 
@@ -365,40 +367,88 @@ app/src/main/assets/device_profiles/
 
 见上文「机型配置」。
 
-### ③ KSU 接管：ksud 候选阶梯（`ksu.c`）
+### ③ KSU 接管：ksud 候选阶梯（`ksu.c` / `ksu_script.c`）
 
 设备上同时存在两个不同版本的 ksud：
 
 | 来源 | 大小 | 能力 |
 |---|---|---|
-| KernelSU 管理器里的 `libksud.so` | 4 990 848 B | 旧版，只认 `-h` / `-V`，**不支持 `late-load` / daemon** |
-| APK 自带的 `assets/ksu/ksud` | 6 402 736 B（sha256 `049491e2b4cc0a6c…`） | 与本 APK 的 KMI 集配套 |
+| KernelSU 管理器里的 `libksud.so` | 4 990 848 B | 旧版，只认 `-h` / `-V`，**不支持 `late-load`** |
+| APK 自带的 `assets/ksu/ksud` | 6 402 736 B（sha256 `049491e2b4cc0a6c…`，版本串 `32680` / `3.3.1`） | 与本 APK 的 KMI 集配套；与设备上的 KSU 管理器 v3.3.1 (32680-5) **同版本** |
 
-旧实现只取第一个存在的候选（永远是管理器那个），于是接管时 `late-load` 只打印
-一段帮助、daemon 起不来 —— 表现为「模块加载了，但 `/system/bin/sh: su:
-inaccessible or not found`」。
+内置那个是**首选候选**（2026-10-31 真机：只有它 `late-load` 成功、模块注册成功）；
+管理器里那个仍会被暂存到 `/data/local/tmp/ksud`，作为阶梯里的**兜底**。
 
-现在把**所有**候选交给接管脚本，按顺序试：每个候选先 `late-load --kmi`、
-再裸 `late-load`，模块注册成功后才用它起 daemon（用 `pidof ksud` 确认），
-日志里记 `ksud_used=`。起 daemon 必须用真正能 `late-load` 的那个构建，
-否则旧构建只会打印帮助后退出。
+候选顺序：`CVE98260_KSUD` → `$CVE98260_HOME/ksud` → `/data/adb/ksu/bin/ksud`
+→ `/data/adb/ksud` → `/data/local/tmp/ksud`。
 
-### ⚠️ 提权后 SELinux 会停在 Permissive
+脚本对每个候选先 `late-load --kmi <KMI>`、再裸 `late-load`，直到模块真的出现在
+`/proc/modules` 里，日志记 `ksud_used=`。
+
+> **模块注册是异步的，必须轮询。** 上游 `late_load.rs:39` 里 `ksud late-load`
+> **第一件事就是 `daemonize()`** —— 命令立刻返回，真正的 `load_module` 在后台
+> 子进程里做。旧实现 `sleep 1` 采样一次就下结论，正好撞在这个竞态上，会误判成
+> 「没加载」并白跑下一个候选。现在改成最多轮询 6 秒。
+
+### ④ KernelSU 的 su 是怎么来的（这一条最容易误判）
+
+**KernelSU 根本没有 `/system/bin/su` 这个文件。** 内核模块在 `execve` 阶段把
+`su` 替换成 ksud —— 上游 v3.3.1 `userspace/ksud/src/cli.rs:501` 原文：
+
+> the kernel executes su with argv[0] = "su" and replace it with us
+
+而且**只对被授权的 uid 替换**。没被授权时 `execve` 返回 `ENOENT`，shell 就报
+`su: inaccessible or not found`。
+
+两个直接后果：
+
+1. **「有没有 su」取决于调用方的 uid，而不是某个文件存在与否。** 本工具的
+   Shizuku UserService 跑在 **uid 2000（shell）** 身份，而你在 KSU 管理器里
+   授权的是 **App 自己的 uid** —— 对 uid 2000 无效。于是「模块明明加载了、
+   管理器明明显示工作中」，探测却一直说没有 su。
+2. su 探测必须**走两条通道**：
+   - **App 通道**：由 App 进程用**自己的 uid** 执行 `su -c id`（AIDL 回调
+     `ICve98260Callback.probeSu()`）—— 这是用户在 KSU 管理器里授权的那条。
+   - **shell 通道**：UserService 以 uid 2000 执行 —— 只有在模块带
+     `allow_shell=1` 加载（上游 `late-load --allow-shell`）时才有效。
+
+> `allow_shell` 是**模块加载参数**，只在模块**首次加载**时生效 ——
+> `late_load::run` 开头就检查 `has_kernelsu()`，已加载则跳过 `load_module`，
+> 参数无处可施。所以默认关闭；需要时用 `CVE98260_KSU_ALLOW_SHELL=1` 打开，
+> 且必须**重新加载模块**才生效。
+
+另外：**KernelSU 没有 Magisk 那种常驻 daemon。** `late-load` 自带的后台进程跑完
+stage 脚本、重启管理器之后就退出了；用户态组件由 `late_load::run` 内部的
+`utils::install()` 装到 `/data/adb/ksud`（并建 `/data/adb/ksu/bin/ksud` 软链），
+**内核替换 su 用的就是它**。旧实现额外 `nohup ksud &` 起的那一套用的是管理器里
+那个陈旧构建（只认 `-h`/`-V`），于是永远报
+`ksud daemon not visible in /proc; ksud said: Options: -h, --help`。
+
+### ⚠️ 关于提权后的 SELinux 状态
 
 `uaf_plant.c` 在伪造 cred 之前会**主动把内核的 `selinux_state` 改写掉**，
 把 SELinux 从 Enforcing 切成 Permissive（最多重试 12 次，日志里能看到
 `[selinux] attempt N/12` / `[selinux] already permissive`）。
 
-这是利用链路的一环，**本工具不会自动恢复**。想恢复：
+这是利用链路的一环。**跑完之后是什么状态，取决于跑到哪一步**：
+
+| 跑到哪 | 结束时的 SELinux | 说明 |
+|---|---|---|
+| 只到 `verify`（默认） | **Permissive** | 工具不自动恢复 |
+| 到 `ksu-takeover` 且 KernelSU 接管成功 | **Enforcing** | 内核把 SELinux 收回去了 |
+
+2026-10-31 真机实测（v1.1.6 跑完后）：KSU 管理器显示「SELinux 状态：强制执行」，
+也就是**接管成功后 SELinux 回到了 Enforcing** —— 这正是 KernelSU 正常工作时的状态。
+
+想强制恢复 Permissive（需要 root）：
 
 ```bash
+adb shell setenforce 0      # 直接切
 adb reboot                  # 最干净：内核启动即 Enforcing
-adb shell setenforce 1      # 或直接推回去（需要 root）
 ```
 
-> 只有 `ksu-takeover` 阶段成功加载 KernelSU 后，内核才会把 SELinux 推回 Enforcing。
-> 而 `ksu-takeover` 会改写 boot 分区、bootloader 未解锁的设备可能变砖，
-> 所以**默认只跑到 `verify` 阶段** —— 也就意味着跑完之后 SELinux 会留在 Permissive。
+> `ksu-takeover` 会改写 boot 分区、bootloader 未解锁的设备可能变砖，
+> 所以**默认只跑到 `verify` 阶段** —— 只跑默认流程的话 SELinux 会留在 Permissive。
 
 ---
 

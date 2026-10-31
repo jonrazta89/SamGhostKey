@@ -49,7 +49,7 @@ int main(void)
 	snprintf(ksuds[2], sizeof(ksuds[2]), "%s", "/data/adb/ksud");
 
 	/* ---- 生成 ---- */
-	CHECK(ksu_write_takeover_script(path, ksuds, 3, "android17-6.18", log) == 0);
+	CHECK(ksu_write_takeover_script(path, ksuds, 3, "android17-6.18", log, 0) == 0);
 
 	f = fopen(path, "rb");
 	CHECK(f != NULL);
@@ -71,15 +71,34 @@ int main(void)
 	CHECK(strstr(buf, "late-load --kmi") != NULL);
 	CHECK(strstr(buf, "\"$K\" late-load >>") != NULL);
 
-	/* ---- daemon 必须用「真正能 late-load 的那个」候选 ---- */
-	CHECK(strstr(buf, "nohup \"$K\" >/dev/null 2>&1 &") != NULL);
-	/* 旧写法（固定变量）必须已经不存在，否则又回到「只用一个候选」的老路 */
+	/* ---- late-load 先 daemonize、模块注册是异步的：必须轮询，不能采样一次 ----
+	 * 旧实现 sleep 1 采样一次，在 daemonize 竞态里会误判成「没加载」，
+	 * 于是白白跳到下一个候选。 */
+	CHECK(strstr(buf, "poll_live()") != NULL);
+	CHECK(strstr(buf, "LIVE=$(poll_live)") != NULL);
+	CHECK(strstr(buf, "while [ $i -lt $POLL_TRIES ]") != NULL);
+	/* 旧的单次采样实现必须已经不存在 */
+	CHECK(strstr(buf, "live() { sleep 1;") == NULL);
+
+	/* ---- 不再自己起 ksud daemon ----
+	 * 上游 KernelSU 没有常驻 ksud daemon：late-load 自带的后台进程跑完 stage
+	 * 脚本就退出；旧实现额外 nohup 起来的是管理器里那个只认 -h/-V 的陈旧构建，
+	 * 于是永远报 "ksud daemon not visible in /proc"。 */
+	CHECK(strstr(buf, "nohup \"$K\"") == NULL);
+	CHECK(strstr(buf, "pidof ksud") == NULL);
 	CHECK(strstr(buf, "nohup \"$KSUD\"") == NULL);
 
-	/* ---- daemon 起没起来要用 pidof 确认，并记录最终用了谁 ---- */
-	CHECK(strstr(buf, "if pidof ksud >/dev/null 2>&1; then") != NULL);
+	/* ---- 记录最终用了哪个候选，以及 late-load 装出来的 userspace 组件
+	 * （内核替换 su 用的就是 /data/adb/ksu/bin/ksud） ---- */
 	CHECK(strstr(buf, "KSUD_USED=$K") != NULL);
 	CHECK(strstr(buf, "ksud_used=$KSUD_USED") != NULL);
+	CHECK(strstr(buf, "ksud_installed=$P") != NULL);
+	CHECK(strstr(buf, "/data/adb/ksu/bin/ksud") != NULL);
+	CHECK(strstr(buf, "/data/adb/ksud") != NULL);
+
+	/* ---- allow_shell 默认关闭；打开时给 late-load 传 --allow-shell ---- */
+	CHECK(strstr(buf, "ALLOW_SHELL=0") != NULL);
+	CHECK(strstr(buf, "late-load --kmi \"$KMI\" --allow-shell") != NULL);
 
 	/* ---- 其它必须保留的行为 ---- */
 	CHECK(strstr(buf, "setenforce 0") != NULL);
@@ -91,7 +110,7 @@ int main(void)
 	{
 		char one[1][512];
 		snprintf(one[0], sizeof(one[0]), "%s", "/data/local/tmp/ksud");
-		CHECK(ksu_write_takeover_script(path, one, 1, "android17-6.18", log) == 0);
+		CHECK(ksu_write_takeover_script(path, one, 1, "android17-6.18", log, 0) == 0);
 		f = fopen(path, "rb");
 		len = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
 		if (f)
@@ -99,6 +118,20 @@ int main(void)
 		buf[len] = 0;
 		CHECK(strstr(buf, "KSUD0='/data/local/tmp/ksud'") != NULL);
 		CHECK(strstr(buf, "KSUD1=") == NULL);
+	}
+
+	/* ---- allow_shell 打开时：late-load 必须带上 --allow-shell ---- */
+	{
+		char one[1][512];
+		snprintf(one[0], sizeof(one[0]), "%s", "/data/local/tmp/ksud");
+		CHECK(ksu_write_takeover_script(path, one, 1, "android17-6.18", log, 1) == 0);
+		f = fopen(path, "rb");
+		len = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
+		if (f)
+			fclose(f);
+		buf[len] = 0;
+		CHECK(strstr(buf, "ALLOW_SHELL=1") != NULL);
+		CHECK(strstr(buf, "late-load --kmi \"$KMI\" --allow-shell") != NULL);
 	}
 
 	printf("[case] ksu takeover script generation\n");

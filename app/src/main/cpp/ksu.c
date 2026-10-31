@@ -137,19 +137,26 @@ static void derive_kmi(char *out, size_t out_size)
  * 2026-10-31 真机教训：设备上同时存在两个不同版本的 ksud ——
  *   · 管理器里的 libksud.so（4990848 B，旧版，只认 -h/-V，不支持
  *     late-load / daemon）；
- *   · APK 自带的 assets/ksu/ksud（6402736 B，sha256 049491e2b4cc0a6c...）。
+ *   · APK 自带的 assets/ksu/ksud（6402736 B，sha256 049491e2b4cc0a6c...，
+ *     版本串 32680 / 3.3.1 —— 与设备上那个 KSU 管理器 v3.3.1 (32680-5)
+ *     **同版本**，所以 late-load 才能加载成功）。
  * 旧实现只取第一个存在的候选（永远是管理器那个），于是接管时
- * `late-load` 只打印一段帮助、daemon 起不来，最终「模块加载了但没有 su」。
+ * `late-load` 只打印一段帮助，最终「模块加载了但没有 su」。
  *
- * 现在把候选**全部**交给接管脚本，由脚本按顺序试，直到某个构建既能
- * 注册模块、又能把 ksud daemon 拉起来（脚本会记 ksud_used=）。
+ * 现在的顺序（2026-10-31 修正）：
+ *   1. CVE98260_KSUD       —— 宿主显式指定（宿主现在指向内置那个 v3.3.1）
+ *   2. $CVE98260_HOME/ksud —— APK 内置资源（与本 APK 的 KMI 集配套）
+ *   3. /data/adb/ksu/bin/ksud —— 上一次 late-load 的 utils::install() 产物，
+ *      这正是**内核替换 su 时用的那个 ksud**
+ *   4. /data/adb/ksud      —— 同上，legacy 路径
+ *   5. /data/local/tmp/ksud —— 管理器里那个陈旧构建，**排最后**（兜底）
  *
  * 返回候选个数（0 = 一个都没有）。
  */
 static int find_ksud_list(char out[][512], int max)
 {
 	const char *env = getenv("CVE98260_KSUD");
-	const char *candidates[4];
+	const char *candidates[5];
 	char built[512];
 	size_t i;
 	int n = 0;
@@ -159,8 +166,9 @@ static int find_ksud_list(char out[][512], int max)
 	snprintf(built, sizeof(built), "%s/ksud", ksu_home());
 	candidates[0] = env;
 	candidates[1] = built;
-	candidates[2] = "/data/local/tmp/ksud";
+	candidates[2] = "/data/adb/ksu/bin/ksud";
 	candidates[3] = "/data/adb/ksud";
+	candidates[4] = "/data/local/tmp/ksud";
 	for (i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
 		struct stat st;
 		int dup = 0;
@@ -229,16 +237,29 @@ static void ksu_sync(void)
 
 int ksu_takeover_main(int argc, char **argv)
 {
-	char ksuds[4][512], kmi[64], script[512], log[512], cmd[1024];
+	char ksuds[5][512], kmi[64], script[512], log[512], cmd[1024];
 	char *su_argv[4];
 	int i, rc = 1;
 	int already = 0;
 	int n_ksuds;
+	int allow_shell;
 
 	(void)argc;
 	(void)argv;
 
-	n_ksuds = find_ksud_list(ksuds, 4);
+	/*
+	 * allow_shell=1 是上游 late-load 的模块加载参数，含义「Always allow
+	 * shell to get root permission」—— 放行 shell(uid 2000)，也就是本工具
+	 * UserService 的身份。**只在模块首次加载时生效**：late_load::run 开头
+	 * 就检查 has_kernelsu()，已加载则跳过 load_module，参数无处可施。
+	 * 所以默认关闭，由宿主按需通过 CVE98260_KSU_ALLOW_SHELL=1 打开。
+	 */
+	{
+		const char *as = getenv("CVE98260_KSU_ALLOW_SHELL");
+		allow_shell = (as && *as && strcmp(as, "0") != 0) ? 1 : 0;
+	}
+
+	n_ksuds = find_ksud_list(ksuds, 5);
 	if (n_ksuds <= 0) {
 		fprintf(stderr, "[ksu] error: ksud not found (assets/ksu/ksud not bundled?)\n");
 		return 1;
@@ -247,8 +268,8 @@ int ksu_takeover_main(int argc, char **argv)
 	snprintf(script, sizeof(script), "%s/ksu_takeover.sh", ksu_home());
 	snprintf(log, sizeof(log), "%s/ksu_takeover.log", ksu_home());
 
-	fprintf(stdout, "[ksu] kmi=%s uid=%u candidates=%d\n", kmi,
-		(unsigned)getuid(), n_ksuds);
+	fprintf(stdout, "[ksu] kmi=%s uid=%u candidates=%d allow_shell=%d\n", kmi,
+		(unsigned)getuid(), n_ksuds, allow_shell);
 	/*
 	 * Diagnostic: two different ksud builds live on the device -- the bundled
 	 * one is 6402736 B (sha256 049491e2b4cc0a6c...) while /data/adb/ksud is a
@@ -268,7 +289,7 @@ int ksu_takeover_main(int argc, char **argv)
 		goto done;
 	}
 
-	if (ksu_write_takeover_script(script, ksuds, n_ksuds, kmi, log)) {
+	if (ksu_write_takeover_script(script, ksuds, n_ksuds, kmi, log, allow_shell)) {
 		fprintf(stderr, "[ksu] error: cannot write %s\n", script);
 		ksu_sync();
 		return 1;
