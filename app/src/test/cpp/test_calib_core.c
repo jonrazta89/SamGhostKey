@@ -245,6 +245,151 @@ static void test_solve_lmap(void)
 	CHECK_EQ_U64(got, 0);
 }
 
+/*
+ * calib_pick_trusted_site：cred / task 分配点的可信性判定（6.18 适配新增）。
+ *
+ * 场景：slab 尺寸可能被多个缓存共享，光按「尺寸最频」挑站点会挑到别人的
+ * 分配点，于是 exploit 按站点过滤 trace 时过滤不到真正的 cred 对象。
+ * 所以除了「出现次数多」，还要求语义自证：
+ *   · 站点反算出的未重定位地址必须落在它自称的函数区间内；
+ *   · 函数名命中关键字，或与 profile 锚点同函数。
+ */
+static void test_pick_trusted_site(void)
+{
+	const uint64_t slide = UINT64_C(0x14f1000000);
+	/* 未重定位的函数区间（真机 do_timer_create 附近量级） */
+	const uint64_t fbase = UINT64_C(0xffffffc080211000);
+	const uint64_t flen = UINT64_C(0x654);
+	const uint64_t anchor_base = UINT64_C(0xffffffc080203000);
+	const uint64_t anchor_len = UINT64_C(0x120);
+	struct calib_site_cand cands[4];
+	uint64_t site = 0;
+
+	printf("[case] calib_pick_trusted_site\n");
+
+	/* 空输入 */
+	CHECK_EQ_U64(calib_pick_trusted_site(NULL, 0, slide, 0, 0, &site), 0);
+	CHECK_EQ_U64(site, 0);
+
+	/* 1) 函数名命中关键字 -> 可信 */
+	cands[0].site = slide + fbase + 0x40;
+	cands[0].count = 10;
+	cands[0].func_base = fbase;
+	cands[0].func_len = flen;
+	cands[0].name_hit = 1;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, 0, 0, &site), 1);
+	CHECK_EQ_U64(site, slide + fbase + 0x40);
+
+	/* 2) 名字没命中、又没有锚点 -> 不可信（宁可退回按尺寸匹配） */
+	cands[0].name_hit = 0;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, 0, 0, &site), 0);
+	CHECK_EQ_U64(site, 0);
+
+	/* 3) 名字没命中，但与 profile 锚点同函数 -> 可信（允许 LTO 内联） */
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, fbase, flen, &site), 1);
+	CHECK_EQ_U64(site, slide + fbase + 0x40);
+
+	/* 4) 名字没命中、锚点是另一个函数 -> 不可信 */
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, anchor_base, anchor_len,
+					     &site), 0);
+
+	/* 5) 反算出的未重定位地址落在函数区间外 -> 不可信 */
+	cands[0].site = slide + fbase + flen + 0x10;
+	cands[0].name_hit = 1;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, 0, 0, &site), 0);
+
+	/* 6) site 不是内核地址（高位不是 0xFFFF）-> 不可信 */
+	cands[0].site = UINT64_C(0x1234567890);
+	cands[0].func_base = fbase;
+	cands[0].func_len = flen;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, 0, 0, &site), 0);
+
+	/* 7) site < slide（减出来会下溢）-> 不可信 */
+	cands[0].site = UINT64_C(0xffffffc080211040);
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 1, slide, 0, 0, &site), 0);
+
+	/* 8) 次数最多的不可信、次多的可信 -> 必须选可信的那个 */
+	cands[0].site = slide + fbase + 0x10;   /* 次数多但名字不命中 */
+	cands[0].count = 100;
+	cands[0].func_base = fbase;
+	cands[0].func_len = flen;
+	cands[0].name_hit = 0;
+	cands[1].site = slide + fbase + 0x80;   /* 次数少但名字命中 */
+	cands[1].count = 3;
+	cands[1].func_base = fbase;
+	cands[1].func_len = flen;
+	cands[1].name_hit = 1;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 2, slide, 0, 0, &site), 1);
+	CHECK_EQ_U64(site, slide + fbase + 0x80);
+
+	/* 9) 全部不可信 -> 返回 0，调用方应退回按尺寸匹配 */
+	cands[0].name_hit = 0;
+	cands[1].name_hit = 0;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 2, slide, 0, 0, &site), 0);
+	CHECK_EQ_U64(site, 0);
+
+	/* 10) count <= 0 的候选被跳过 */
+	cands[0].site = slide + fbase + 0x40;
+	cands[0].count = 0;
+	cands[0].name_hit = 1;
+	cands[1].count = 0;
+	CHECK_EQ_U64(calib_pick_trusted_site(cands, 2, slide, 0, 0, &site), 0);
+}
+
+/*
+ * calib_parse_psym：解析 %pS 打印的 call_site 符号串。
+ *
+ * 这条解析上踩过两个很隐蔽的坑，所以单独钉死：
+ *   1. '+' 后面紧跟 "0x"，第一个十六进制数字在 q+3 而不是 q+2。
+ *      写成 strtoull(q + 2, ...) 时 "x" 不是合法十六进制字符 → 偏移恒为 0，
+ *      于是文本 trace 那条「符号名+精确偏移」的交叉验证路径整条是死的。
+ *   2. 符号名与偏移必须分开，名字里不能留 "+0x..."。
+ */
+static void test_parse_psym(void)
+{
+	char sym[96];
+	uint64_t off = 0;
+
+	printf("[case] calib_parse_psym\n");
+
+	/* 真机 6.18 实测样本 */
+	CHECK_EQ_U64(calib_parse_psym("do_timer_create+0xe8/0x508", sym, sizeof(sym),
+				      &off), 1);
+	CHECK(strcmp(sym, "do_timer_create") == 0);
+	CHECK_EQ_U64(off, 0xe8);
+
+	CHECK_EQ_U64(calib_parse_psym("prepare_creds+0x30/0x398", sym, sizeof(sym),
+				      &off), 1);
+	CHECK(strcmp(sym, "prepare_creds") == 0);
+	CHECK_EQ_U64(off, 0x30);
+
+	CHECK_EQ_U64(calib_parse_psym("dup_task_struct+0x54/0x498", sym, sizeof(sym),
+				      &off), 1);
+	CHECK(strcmp(sym, "dup_task_struct") == 0);
+	CHECK_EQ_U64(off, 0x54);
+
+	/* 偏移为 0 时也要正确（符号名在函数入口） */
+	CHECK_EQ_U64(calib_parse_psym("foo+0x0/0x10", sym, sizeof(sym), &off), 1);
+	CHECK(strcmp(sym, "foo") == 0);
+	CHECK_EQ_U64(off, 0);
+
+	/* 大偏移 */
+	CHECK_EQ_U64(calib_parse_psym("bar+0x1234/0x2000", sym, sizeof(sym), &off), 1);
+	CHECK(strcmp(sym, "bar") == 0);
+	CHECK_EQ_U64(off, 0x1234);
+
+	/* 裸地址（%pS 找不到符号时）→ 没有 '+'，解析失败 */
+	CHECK_EQ_U64(calib_parse_psym("0xffffffd571211134", sym, sizeof(sym), &off), 0);
+
+	/* 空输入 / NULL */
+	CHECK_EQ_U64(calib_parse_psym(NULL, sym, sizeof(sym), &off), 0);
+	CHECK_EQ_U64(calib_parse_psym("", sym, sizeof(sym), &off), 0);
+
+	/* 名字过长 → 失败，不许截断后当成功 */
+	CHECK_EQ_U64(calib_parse_psym("a_very_long_symbol_name+0x10/0x20", sym, 8,
+				      &off), 0);
+}
+
 int main(void)
 {
 	printf("calib_core host tests\n");
@@ -252,6 +397,8 @@ int main(void)
 	test_top_values();
 	test_pages_from_ptrs();
 	test_solve_lmap();
+	test_pick_trusted_site();
+	test_parse_psym();
 	printf("\n%d checks, %d failure(s): %s\n", g_checks, g_failures,
 	       g_failures ? "FAILED" : "OK");
 	return g_failures ? 1 : 0;

