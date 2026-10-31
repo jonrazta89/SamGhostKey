@@ -36,7 +36,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 | 产物命名 | `GhostKey-<版本>-arm64-v8a-release.apk` |
 
-当前版本：**1.1.9**（versionCode 22，包名 `com.EternalTimes.GhostKey`）。
+当前版本：**1.1.10**（versionCode 23，包名 `com.EternalTimes.GhostKey`）。
 
 ---
 
@@ -66,7 +66,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 ```
 
 产物路径：`app/build/outputs/apk/release/GhostKey-1.1.4-arm64-v8a-release.apk`，
-交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.9-arm64-v8a-release.apk`）。
+交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.10-arm64-v8a-release.apk`）。
 
 ---
 
@@ -452,7 +452,7 @@ stage 脚本、重启管理器之后就退出了；用户态组件由 `late_load
 > 并且只在模块确实注册了（`LIVE=yes`）时才等 —— 模块没起来时 `late-load`
 > 会提前 return，根本不会去装，空等毫无意义。
 
-### ⑤ UAF 采集：多 CPU + 空闲早停（v1.1.9）
+### ⑤ UAF 采集：阻塞读 + 毫秒级空闲早停（v1.1.10）
 
 `exploit` 阶段要反复跑「UAF cycle」：造一个 k_itimer、把它释放、让页被复用、
 在页里摆一份伪造的 cred。每个 cycle ~2.9 秒，一轮下来 4 个 cycle ≈ 12 秒。
@@ -468,13 +468,22 @@ while (...) read(cpu0/trace_pipe_raw); /* 阻塞读 */
 那 2 秒全花在阻塞的 `read()` 上。真机 2026-10-31 17:42 那轮日志，
 `[trace] kmem_cache_alloc armed` → `[uaf] captured=2048` 正好隔了 2 秒。
 
-v1.1.9 改成：
+v1.1.10 改成：
 
 | 改动 | 说明 |
 |---|---|
-| **多 CPU 采集** | 造 timer 的子进程**不绑核**，记录可能落在任意 CPU 上。旧实现只读 cpu0，cpu0 上有时一条都捞不到（`[uaf] too many timers`）。现在 `poll()` 同时监听所有 CPU 的 `trace_pipe_raw` |
-| **每 CPU 400ms 空闲早停** | 某个 CPU 安静满 400ms 就摘掉它 —— tracing 已关，它就是空的，再等没意义。`calib.c` 早就是这套（`capture_raw` 的 `RAW_IDLE_MS`） |
+| **毫秒级超时** | 用 `setitimer(ITIMER_REAL)` 取代 `alarm()`（后者只能整秒）。首次读给 2000ms 宽限（与老实现同量级），之后每次读只等 400ms —— 缓冲已冻结，400ms 没新数据就等于排空 |
 | **增量扫描** | 边读边扫，不再「读完 8MB 再扫一遍」。扫描逻辑抽到 `rawscan.c`（纯计算，有宿主单测） |
+| **多 CPU 兜底** | cpu0 读不够时才补其它 CPU（子进程不绑核，记录可能不在 cpu0）。总预算有上限，不会比老实现更慢 |
+
+> ⚠️ **`trace_pipe_raw` 不支持 `poll()`。** 它的等待队列只在阻塞 `read()` 的路径里
+> 注册（`trace_pipe_read` → `tracing_iter_wait`），所以 `poll()` 永远等不到可读
+> 信号 —— 不是「有时读不到」，是**永远读不到**。v1.1.9 用 `poll()` 决定何时
+> `read()`，真机 2026-10-31 18:24 那轮每个 cycle 都是
+> `[uaf] captured=0 chosen=0 raw=0`，整条 exploit 挂掉。
+>
+> 同一个仓库里其实已经有答案：`calib.c` 的 `capture_raw` 之所以要 **fork 子进程
+> 做阻塞读、再用普通管道转发给父进程 poll**，不是为了多路复用，是**必需的绕过**。
 
 **语义保持**：仍然先读完 cpu0 再考虑其它 CPU，所以 cpu0 记录够用时，
 候选数组的内容与顺序跟旧实现**完全一致** → 选中的 UAF 受害者也完全一致；
