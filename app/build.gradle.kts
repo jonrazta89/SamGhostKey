@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "2.0.0-alpha03"
+val appVersionName = "2.0.0"
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -51,11 +51,10 @@ android {
     compileSdkMinor = 2
 
     defaultConfig {
-        // 升级为 Gradle 9 / AGP 9.4 的测试构建：改用 .test 包名，可与正式版并存安装
-        applicationId = "com.EternalTimes.GhostKey.test"
+        applicationId = "com.EternalTimes.GhostKey"
         minSdk = 31
         targetSdk = 37
-        versionCode = 20003
+        versionCode = 24
         versionName = appVersionName
         // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
         buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")
@@ -146,10 +145,9 @@ java {
     }
 }
 
-// 产物文件名：正式版 GhostKey-<版本>-*；本 .test 构建加 -test 标记避免与正式版撞名
-// （如 GhostKey-1.1.7-test-arm64-v8a-release.apk）
+// 产物文件名：GhostKey-<版本>-<abi>-<buildtype>.apk（如 GhostKey-2.0.0-arm64-v8a-release.apk）
 base {
-    archivesName.set("GhostKey-$appVersionName-test")
+    archivesName.set("GhostKey-$appVersionName")
 }
 
 dependencies {

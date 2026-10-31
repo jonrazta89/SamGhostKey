@@ -1,6 +1,6 @@
 # GhostKey — CVE-2026-98260 一键提权工具
 
-> 本分支为 **测试分支 `refactor/gradle-phase1`**：使用 `.test` 包名与预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta2），产物与正式版并存、互不覆盖。
+> 主分支 **`main`** 为正式版线：包名 `com.EternalTimes.GhostKey`，当前以预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta2）构建正式版 **2.0.0**。
 
 面向 **已授权安全研究 / 自用设备** 的 Android 一键提权工具。基于 **Shizuku + NDK Native**，把 exploit、内核偏移表与 OTA boot 镜像解析打包进单个 APK，手机上点击即可触发，无需 PC / 命令行。
 
@@ -33,7 +33,7 @@
 | Jetpack Compose | BOM 2024.10.00（Material3） |
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 
-当前版本：**2.0.0-alpha03**（versionCode 20003，测试包名 `com.EternalTimes.GhostKey.test`）。
+当前版本：**2.0.0**（versionCode 24，包名 `com.EternalTimes.GhostKey`）。
 
 > Kotlin 2.5.0-Beta2 为预发布版，插件与 stdlib 走 JetBrains bootstrap 仓库（见 `settings.gradle.kts`）。
 
@@ -50,7 +50,7 @@
 
 ```bash
 ./gradlew assembleRelease
-# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-alpha03-test-arm64-v8a-release.apk
+# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-arm64-v8a-release.apk
 ```
 
 ---
@@ -97,7 +97,7 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
 
 ## 版本约定
 
-测试分支产物命名 `GhostKey-<ver>-test-arm64-v8a-release.apk`，构建后复制到仓库根 `release/`（已被 `.gitignore` 忽略，不进版本库），并以 **GitHub Release 附件**形式发布。`.test` 包名与正式版并存，互不覆盖。
+正式版产物命名 `GhostKey-<ver>-arm64-v8a-release.apk`，构建后复制到仓库根 `release/`（已被 `.gitignore` 忽略，不进版本库），并以 **GitHub Release 附件**形式发布。
 
 ---
 
