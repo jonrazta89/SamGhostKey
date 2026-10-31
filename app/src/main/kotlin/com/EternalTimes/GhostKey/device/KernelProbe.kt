@@ -1,5 +1,6 @@
 package com.EternalTimes.GhostKey.device
 
+import com.EternalTimes.GhostKey.tryQuietly
 import java.io.File
 
 /**
@@ -26,7 +27,7 @@ object KernelProbe {
     private fun runUname(): String = runCatching {
         val p = Runtime.getRuntime().exec(arrayOf("uname", "-r"))
         val out = p.inputStream.bufferedReader().use { it.readLine() }?.trim().orEmpty()
-        runCatching { p.destroy() }
+        tryQuietly { p.destroy() }
         out
     }.getOrDefault("")
 

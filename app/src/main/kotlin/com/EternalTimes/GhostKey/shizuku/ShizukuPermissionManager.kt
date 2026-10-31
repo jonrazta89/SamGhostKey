@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Process
 import android.util.Log
 import com.EternalTimes.GhostKey.model.ShizukuStatus
+import com.EternalTimes.GhostKey.tryQuietly
 import rikka.shizuku.Shizuku
 
 /**
@@ -34,9 +35,9 @@ class ShizukuPermissionManager(private val context: Context) {
     }
 
     init {
-        runCatching { Shizuku.addBinderReceivedListenerSticky(binderReceived) }
-        runCatching { Shizuku.addBinderDeadListener(binderDead) }
-        runCatching { Shizuku.addRequestPermissionResultListener(permissionResult) }
+        tryQuietly { Shizuku.addBinderReceivedListenerSticky(binderReceived) }
+        tryQuietly { Shizuku.addBinderDeadListener(binderDead) }
+        tryQuietly { Shizuku.addRequestPermissionResultListener(permissionResult) }
     }
 
     /** 当前状态。 */
@@ -93,13 +94,13 @@ class ShizukuPermissionManager(private val context: Context) {
 
     private fun notifyChanged() {
         val current = status()
-        listeners.forEach { runCatching { it(current) } }
+        listeners.forEach { tryQuietly { it(current) } }
     }
 
     fun close() {
-        runCatching { Shizuku.removeBinderReceivedListener(binderReceived) }
-        runCatching { Shizuku.removeBinderDeadListener(binderDead) }
-        runCatching { Shizuku.removeRequestPermissionResultListener(permissionResult) }
+        tryQuietly { Shizuku.removeBinderReceivedListener(binderReceived) }
+        tryQuietly { Shizuku.removeBinderDeadListener(binderDead) }
+        tryQuietly { Shizuku.removeRequestPermissionResultListener(permissionResult) }
         listeners.clear()
     }
 

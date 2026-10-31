@@ -86,6 +86,7 @@ import com.EternalTimes.GhostKey.native.NativeContract
 import com.EternalTimes.GhostKey.ui.theme.CvePalette
 import com.EternalTimes.GhostKey.viewmodel.ExploitViewModel
 import com.EternalTimes.GhostKey.viewmodel.ExploitUiState
+import com.EternalTimes.GhostKey.tryQuietly
 import java.util.Locale
 
 /** 漏洞编号，仅用于标题区展示。 */
@@ -877,7 +878,7 @@ private fun openShizukuStore(context: Context) {
         val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download")).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        runCatching { context.startActivity(web) }
+        tryQuietly { context.startActivity(web) }
     }
 }
 
