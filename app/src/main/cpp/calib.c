@@ -281,20 +281,41 @@ static void capture_child(const char *path, int wfd)
 	_exit(0);
 }
 
-/* parent: collect with timeout, SIGKILL the child on timeout (equiv: timeout N dd ... &) */
+/*
+ * 空闲早停窗口（毫秒）。
+ *
+ * trace_pipe_raw 是**活管道**：per-CPU 环形缓冲排空后不会 EOF，fd 一直挂着，
+ * 所以旧实现只能靠 seconds 硬超时收尾 —— 实测每次都白等满 8 秒。
+ * 真机 2026-10-31 的日志里，「text trace: 64 k_itimer site(s) captured」
+ * 到「captured raw=14032896 bytes」之间整整隔了 7 秒，那 7 秒全在空转。
+ *
+ * 400ms 是保守值：采集前 tracing_on 已关，缓冲里的数据是冻结的，
+ * 排空即结束；宁可多等 400ms，也不要少读一条记录。
+ */
+#define RAW_IDLE_MS 400
+
+/* parent: collect with timeout, SIGKILL the child on timeout (equiv: timeout N dd ... &)
+ *
+ * idle_ms > 0 时启用**空闲早停**：连续 idle_ms 没有新数据就认为读完了。
+ * 一条都没读到时仍按老行为等到硬超时 —— 避免把「没抓到」误判成「抓完了」。
+ */
 static void capture_raw(struct raw_sink *sink, const char *const *paths,
-			int npaths, int seconds)
+			int npaths, int seconds, int idle_ms, const char *label)
 {
 	int fds[MAX_CPU_RAW];
 	pid_t pids[MAX_CPU_RAW];
 	struct pollfd pfds[MAX_CPU_RAW];
 	int n = 0;
 	uint64_t deadline;
+	uint64_t last_ms;
+	uint64_t started_ms;
 	int i;
 
 	if (!sink->buf)
 		return;
-	deadline = now_ms() + (uint64_t)seconds * 1000u;
+	started_ms = now_ms();
+	deadline = started_ms + (uint64_t)seconds * 1000u;
+	last_ms = started_ms;
 
 	for (i = 0; i < npaths && n < MAX_CPU_RAW; i++) {
 		int pipe_fd[2];
@@ -327,6 +348,16 @@ static void capture_raw(struct raw_sink *sink, const char *const *paths,
 		uint64_t remain = deadline - now_ms();
 		int wait_ms = remain > 200u ? 200 : (int)remain;
 		int ready;
+
+		/*
+		 * 空闲早停：连续 idle_ms 没有新数据 → 环形缓冲已排空。
+		 * 只有读到过数据才允许早停（一条都没读到时仍等硬超时，
+		 * 避免把「没抓到」误判成「抓完了」）。
+		 */
+		if (idle_ms > 0 && sink->len > 0 &&
+		    now_ms() - last_ms >= (uint64_t)idle_ms)
+			break;
+
 		for (i = 0; i < n; i++) {
 			pfds[i].fd = fds[i];
 			pfds[i].events = POLLIN;
@@ -360,8 +391,13 @@ static void capture_raw(struct raw_sink *sink, const char *const *paths,
 				continue;
 			}
 			sink->len += (size_t)got;
+			last_ms = now_ms();
 		}
 	}
+
+	fprintf(stdout, "[%s] raw capture: %zu bytes in %llu ms (idle window %d ms)\n",
+		label ? label : "calib", sink->len,
+		(unsigned long long)(now_ms() - started_ms), idle_ms);
 
 	for (i = 0; i < n; i++) {
 		int st;
@@ -1051,7 +1087,7 @@ static void calib_a_probe_alloc_sites(const struct kernel_offsets *o,
 			fprintf(stderr, "[calib_a] warn: out of memory for alloc-site probe\n");
 			return;
 		}
-		capture_raw(&sink, paths, npaths, 8);
+		capture_raw(&sink, paths, npaths, 8, RAW_IDLE_MS, "calib_a");
 		fprintf(stdout, "[calib_a] alloc-site probe: raw=%zu bytes\n", sink.len);
 
 		if (!cred_ok && o->cred_size) {
@@ -1320,7 +1356,7 @@ int calib_a_main(int argc, char **argv)
 		fprintf(stderr, "[calib_a] error: out of memory\n");
 		return 1;
 	}
-	capture_raw(&sink, paths, npaths, 8);
+	capture_raw(&sink, paths, npaths, 8, RAW_IDLE_MS, "calib_a");
 	fprintf(stdout, "[calib_a] captured raw=%zu bytes\n", sink.len);
 
 	/* 6.18 适配：优先用 kallsyms 精确解 slide（不依赖写死锚点）；
@@ -1612,7 +1648,7 @@ int calib_b_main(int argc, char **argv)
 		calib_disarm();
 		return 1;
 	}
-	capture_raw(&sink, paths, npaths, 8);
+	capture_raw(&sink, paths, npaths, 8, RAW_IDLE_MS, "calib_b");
 	calib_disarm();
 	fprintf(stdout, "[calib_b] raw=%zu bytes\n", sink.len);
 

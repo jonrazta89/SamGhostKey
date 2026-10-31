@@ -54,6 +54,25 @@ echo "   CC = $CC"
     "$TEST_DIR/test_slide_resolve.c" \
     -o "$OUT_DIR/test_slide_resolve$BIN_SUFFIX"
 
+# T1-c：ksu_script 的接管脚本生成单测（KSU 候选阶梯）
+"$CC" -std=c11 -O1 -g -Wall -Wextra \
+    -I "$CPP_DIR" \
+    "$CPP_DIR/ksu_script.c" \
+    "$TEST_DIR/test_ksu_script.c" \
+    -o "$OUT_DIR/test_ksu_script$BIN_SUFFIX"
+
 echo "== 运行测试 =="
 "$OUT_DIR/test_calib_core$BIN_SUFFIX"
 "$OUT_DIR/test_slide_resolve$BIN_SUFFIX"
+(cd "$OUT_DIR" && "$OUT_DIR/test_ksu_script$BIN_SUFFIX")
+
+# 生成的接管脚本做一次 shell 语法检查（脚本在设备上由 rootd 以 uid=0 执行，
+# 语法错误只会在设备上表现为「没 su」，这里提前拦一道）
+if command -v sh >/dev/null 2>&1; then
+    if sh -n "$OUT_DIR/ksu_takeover_test.sh"; then
+        echo "  ok    ksu_takeover_test.sh: shell syntax valid"
+    else
+        echo "  FAIL  ksu_takeover_test.sh: shell syntax error" >&2
+        exit 1
+    fi
+fi

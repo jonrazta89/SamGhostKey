@@ -1,8 +1,11 @@
 package com.EternalTimes.GhostKey.shizuku
 
 import android.content.Context
+import android.os.Build
 import android.os.Process
 import android.util.Log
+import com.EternalTimes.GhostKey.device.DeviceProfile
+import com.EternalTimes.GhostKey.device.DeviceProfilePolicy
 import com.EternalTimes.GhostKey.device.PrivilegeGate
 import com.EternalTimes.GhostKey.ksu.KsudStage
 import com.EternalTimes.GhostKey.native.NativeContract
@@ -171,27 +174,55 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             callback?.onProgress(stageIndex(Stage.CALIB_A), "ok")
 
             callback?.onProgress(stageIndex(Stage.CALIB_B), "running")
-            val rcB = runStep(
-                listOf(nativeLib.absolutePath, "calibrate-b", "--slide", slide),
-                workDir, env, logFile, profileBlob, CALIB_B_TIMEOUT_SEC,
+            //
+            // 机型配置（加速层）：page_offset 是**编译期常量** —— 线性映射基址由
+            // VA bits 与页大小决定，不随 KASLR 变。命中可信值时直接用，跳过
+            // calibrate-b 的全量扫描（真机实测省 ~9 秒，全程 39 秒）。
+            // 命中条件见 DeviceProfilePolicy.planPageOffset()（含页大小校验）。
+            val deviceProfile = loadDeviceProfile()
+            val pageOffsetPlan = DeviceProfilePolicy.planPageOffset(deviceProfile, runtimePageSize())
+            callback?.onLog(
+                if (deviceProfile != null) {
+                    "<s> device profile ${deviceProfile.id}: ${pageOffsetPlan.reason}"
+                } else {
+                    "<s> no device profile for ${Build.PRODUCT}/${Build.DEVICE}: running calibrate-b"
+                },
             )
-            val pageOffset = readResult(workDir, RESULT_PAGE_OFFSET)
-            if (pageOffset == null) {
-                callback?.onLog("<s> error: calib_b failed to solve page_offset (rc=$rcB), abort")
-                callback?.onProgress(stageIndex(Stage.CALIB_B), "failed")
-                return 3
+            val pageOffset: String
+            val score: String
+            if (pageOffsetPlan.trusted && pageOffsetPlan.value != null) {
+                pageOffset = DeviceProfilePolicy.formatHexU(pageOffsetPlan.value)
+                score = "device-profile"
+                runCatching {
+                    File(workDir, RESULT_PAGE_OFFSET).writeText(pageOffset)
+                    File(workDir, RESULT_PAGE_OFFSET_SCORE).writeText(score)
+                }
+                callback?.onLog(
+                    "<b> linear map base = $pageOffset (${pageOffsetPlan.reason}; skipping calibrate-b)",
+                )
+                callback?.onProgress(stageIndex(Stage.CALIB_B), "skipped")
+            } else {
+                val rcB = runStep(
+                    listOf(nativeLib.absolutePath, "calibrate-b", "--slide", slide),
+                    workDir, env, logFile, profileBlob, CALIB_B_TIMEOUT_SEC,
+                )
+                pageOffset = readResult(workDir, RESULT_PAGE_OFFSET) ?: run {
+                    callback?.onLog("<s> error: calib_b failed to solve page_offset (rc=$rcB), abort")
+                    callback?.onProgress(stageIndex(Stage.CALIB_B), "failed")
+                    return 3
+                }
+                score = runCatching {
+                    File(workDir, RESULT_PAGE_OFFSET_SCORE).readText().trim()
+                }.getOrDefault("?")
+                callback?.onLog("<b> linear map base = $pageOffset (confidence $score)")
+                if (score == "fallback") {
+                    callback?.onLog("<s> warn: page_offset not verified, fell back to profile default")
+                }
+                callback?.onProgress(
+                    stageIndex(Stage.CALIB_B),
+                    if (score == "fallback") "degraded" else "ok",
+                )
             }
-            val score = runCatching {
-                File(workDir, RESULT_PAGE_OFFSET_SCORE).readText().trim()
-            }.getOrDefault("?")
-            callback?.onLog("<b> linear map base = $pageOffset (confidence $score)")
-            if (score == "fallback") {
-                callback?.onLog("<s> warn: page_offset not verified, fell back to profile default")
-            }
-            callback?.onProgress(
-                stageIndex(Stage.CALIB_B),
-                if (score == "fallback") "degraded" else "ok",
-            )
 
             waitIdle()
 
@@ -994,6 +1025,17 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
      * 不动原生 C：ksu.c 大小校验只打日志、不拦截。
      */
     private fun resolveKsud(workDir: File, callback: ICve98260Callback?): File? {
+        // 内置 ksud **永远**先解压：它是与本 APK 的 KMI 集配套的构建
+        // （6402736 B，sha256 049491e2b4cc0a6c...）。
+        // 2026-10-31 真机教训：管理器里的 libksud.so（4990848 B）是旧版本，
+        // 只认 -h/-V，既不支持 late-load 也不支持 daemon —— 单独用它接管会
+        // 得到「模块加载了但没有 su」。现在两个候选都交给原生 ksu.c 的候选
+        // 阶梯，由脚本按顺序试，直到某个既能注册模块、又能把 daemon 拉起来。
+        extractKsud(workDir)?.let {
+            callback?.onLog(
+                "<s> bundled ksud ready: ${it.absolutePath} (size=${it.length()})",
+            )
+        }
         val scanned = runCatching { KsudStage.scanManagerLib(context.packageManager) }.getOrNull()
         if (scanned != null) {
             val (lib, pkg) = scanned
@@ -1062,6 +1104,38 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             if (target.length() > 0L) target else null
         }.getOrNull()
     }
+
+    /**
+     * 载入机型配置（`assets/device_profiles/<product>-<device>.conf`）。
+     *
+     * 找不到就是 null —— 机型配置是**加速层**，没有它照样能跑（退回全量运行时扫描）。
+     * 回退顺序：`<product>-<device>.conf` → `<product>.conf`。
+     */
+    private fun loadDeviceProfile(): DeviceProfile? {
+        val product = Build.PRODUCT?.trim().orEmpty()
+        val device = Build.DEVICE?.trim().orEmpty()
+        if (product.isEmpty() || device.isEmpty()) return null
+        for (id in listOf("$product-$device", product)) {
+            val text = runCatching {
+                context.assets.open("device_profiles/$id.conf").use { input ->
+                    input.readBytes().toString(Charsets.UTF_8)
+                }
+            }.getOrNull() ?: continue
+            val profile = DeviceProfile.parse(id, text)
+            if (profile != null) return profile
+        }
+        return null
+    }
+
+    /**
+     * 运行时页大小（拿不到返回 null）。
+     *
+     * 4K / 16K / 64K 页的 PAGE_OFFSET 不同，机型配置里的 page_offset 只在
+     * 页大小对得上时才可信 —— 这是「注入成功但偏移全错」的隐性故障点。
+     */
+    private fun runtimePageSize(): Int? = runCatching {
+        android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE).toInt()
+    }.getOrNull()
 
 
     /**

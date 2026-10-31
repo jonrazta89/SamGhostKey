@@ -86,7 +86,7 @@ app/src/main/
 │   │   ├── RunLogStore.kt         # 运行日志分档存储
 │   │   ├── UserProfileStore.kt
 │   │   └── ota/                   # BootImageParser / ImgToProfile / KallsymsExtractor
-│   ├── device/                    # DeviceBinding / KernelProbe / PrivilegeGate
+│   ├── device/                    # DeviceBinding / KernelProbe / PrivilegeGate / DeviceProfile
 │   ├── engine/                    # ExploitEngine / FailureDiagnoser
 │   ├── ksu/                       # KsuResolver / KsudStage
 │   ├── model/                     # KernelProfile / ShizukuStatus / StageTracker ...
@@ -96,7 +96,10 @@ app/src/main/
 │   └── viewmodel/                 # ExploitViewModel
 ├── aidl/com/EternalTimes/GhostKey/shizuku/ # Shizuku 跨进程接口
 ├── cpp/                           # Native exploit（CMake 构建为 libcve98260.so）
-└── assets/ksu/                    # ksud 二进制
+├── assets/
+│   ├── kernel_profiles/           # 内核 profile（按 uname -r 精确匹配）→ 决定正确性
+│   ├── device_profiles/           # 机型配置（按 product-device 匹配）→ 决定快慢
+│   └── ksu/                       # ksud 二进制
 tool/
 └── mkprofile.py                   # 离线生成器：boot.img → profile / kallsyms（纯标准库）
 app/src/test/cpp/
@@ -125,7 +128,8 @@ app/src/test/cpp/
 - OPPO Find X8 Ultra（PKJ110）— 内核 `6.6.118-android15-...`
 - 小米 18 Pro Max（设备代号 **madrid**，Snapdragon 8 Elite Extreme Gen 6 / SM8975 / Art v2，Android 17，4K 页）— 内核 `6.18.21-android17-5-g284297031c53-abogki555938958-4k`
 
-具体内核画像以 `app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt` 与 `app/src/main/assets/kernel_profiles/*.conf` 为准。
+具体内核画像以 `app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt` 与 `app/src/main/assets/kernel_profiles/*.conf` 为准；
+机型级加速配置在 `app/src/main/assets/device_profiles/`（见「机型配置」一节），**缺失不影响能否跑通**。
 
 ---
 
@@ -231,7 +235,9 @@ adb shell ls -l /data/local/tmp/cve98260-app/kallsyms.txt
 | calibrate-a（主路径） | `[calib_a] text trace: call_site=do_timer_create+0xe8 -> slide=0x…` | 文本 trace 里没有 `bytes_req=0x180` 的记录（probe 没造出定时器，或 trace 缓冲不够）；会退回 2 MiB 对齐法 |
 | calibrate-a（交叉验证） | `[calib_a] 2MiB method: … off=0xe8 -> slide=0x…` | 两条独立路径算出的 slide 必须一致；不一致说明 kallsyms 与运行内核不是同一份 |
 | calibrate-a（调用点） | `[calib_a] cred alloc site=0x… (func=prepare_creds)`<br>`[calib_a] task alloc site=0x… (func=dup_task_struct)`<br>`[calib_a] task_struct object_size=0x…` | 缺这几行 → cred / task 调用点没解析出来，exploit 只能按尺寸兜底匹配 |
+| calibrate-a（raw 采集） | `[calib_a] raw capture: N bytes in M ms (idle window 400 ms)` | 耗时接近 8000 ms → 空闲早停没生效（缓冲一直在产生新数据），采集会拖慢整条链路 |
 | calibrate-b | `[calib_b] page_offset = 0x… (score=N/M)` | `score=fallback` → 线性映射基址用的默认值，物理换算可能偏 2 GB |
+| 机型配置 | `<s> device profile madrid-madrid: trusted by device profile …`<br>`<b> linear map base = 0x… (…; skipping calibrate-b)` | 没有这行 → 没命中机型配置，`calibrate-b` 照常跑（慢 9 秒，但结果一样对） |
 | exploit | `[config] runtime call sites: kitimer=0x… cred=0x… task=0x…`<br>`[uaf] captured=N chosen=0x…` | `cred=0` / `task=0` → 调用点没落盘；`captured=0` → req 过滤或调用点匹配仍有问题 |
 | exploit（提权） | `[cred] answer uid=0 euid=0 gid=0 egid=0` | 出现的是 `uid=2000` → 伪造 cred 的字段偏移或 task 地址不对 |
 | exploit（收尾） | `[cred] child ack: daemon`<br>`[cred] main process exiting, child becomes daemon`<br>`[rootd] listening at … pid=…`<br>`C98260_ROOTD_READY=1` | 主进程要带 `--daemon-exit` 才会走这条路径；否则会驻留等待子进程（见下） |
@@ -257,6 +263,142 @@ python3 tool/mkprofile.py boot.img \
 
 导入时在设置页选 **JSON 文件**即可（HOCON 是 JSON 的超集，标准 JSON 能被原样解析）；
 若 App 版本只认 `.conf` 后缀，把 `.json` 改名成 `.conf` 也能读。
+
+---
+
+## 机型配置（device profile）
+
+> **机型配置是加速层，不是准入闸门。**
+> 漏洞能否跑通取决于**内核参数**，与商用机型无关 —— 同 SoC 同 KMI 的不同机型用同一份
+> 内核 profile 就够了。所以机型**不参与放行判断**（见 `device/DeviceBinding.kt`
+> 里「v1.0.6 起移除机型锁」的说明：机型锁会误伤同 SoC 同 KMI 的设备）。
+> 机型配置只回答另一个问题：**这台机器上，有哪些量是每次启动都不变的？**
+
+### 为什么需要它
+
+有几个量是**编译期常量**，每次启动都一样，却要靠运行时扫描确认一遍：
+
+| 量 | 为什么是常量 | 运行时扫描的代价 |
+|---|---|---|
+| `page_offset`（线性映射基址） | 由 VA bits 与页大小决定，**不随 KASLR 变** | `calibrate-b` 造 4096 个定时器 + 扫 8 个 CPU 的 raw trace，实测 **9 秒** |
+| `task_struct` 的 slab `object_size` | `CONFIG_THREAD_SIZE_IN_TSK` 内嵌栈，内核构建时定死 | 只能运行期实测（BTF 的 `sizeof` 少一个 `THREAD_SIZE=1024`） |
+
+真机 2026-10-31 的一次完整链路耗时 **39 秒**，`calibrate-b` 就占 9 秒；
+把 `page_offset` 记进机型配置后这一步可以直接跳过。
+
+### 目录与格式
+
+```
+app/src/main/assets/device_profiles/
+├── madrid-madrid.conf      # 小米 18 Pro Max（product=device=madrid）
+└── <product>-<device>.conf # 其它机型
+```
+
+查找顺序：`<product>-<device>.conf` → `<product>.conf` → 都没有就用全量运行时扫描
+（**永远有退路**：机型配置缺失只是慢一点，不会跑不了）。
+
+```hocon
+{
+  product = "madrid"
+  device = "madrid"
+  model = "Xiaomi M154FF"
+  soc = "SM8975"
+
+  page_size = 4096                       # 必须与运行时一致（4K/16K/64K 的 PAGE_OFFSET 不同）
+  page_offset = 0xffffff8000000000      # 线性映射基址（编译期常量）
+  page_offset_trusted = 1               # 人工确认过 → 允许跳过 calibrate-b
+
+  task_struct_object_size = 5760        # slab object_size 实测（含内嵌内核栈）
+
+  flow = {
+    calib_a = { probe = 2048, hold = 2 } # 探针参数
+  }
+}
+```
+
+### 三条硬规则
+
+1. **KASLR slide 绝不能进机型配置** —— 它每次启动都变，必须运行时解；写死会直接让
+   注入失败（伪造的 cred 里全是错指针）。这是唯一必须运行时才知道的量。
+2. **`page_offset_trusted = 1` 之前必须先确认** —— 页大小与运行时对不上时，
+   物理→虚拟换算整体偏移，表现为「注入成功但偏移全错」。宿主在运行时比对页大小
+   （`Os.sysconf(_SC_PAGESIZE)`），对不上就自动放弃这份配置、退回 `calibrate-b` 扫描。
+3. **机型配置不改变放行判断** —— 内核 profile 仍然按 `uname -r` **精确**匹配，
+   没有精确匹配就是没有，不会因为「这台机型我配过」而放行。
+
+### 给别的设备生成机型配置
+
+1. 在该设备上跑通一次完整链路，从日志里取 `page_offset` 与 `task_struct object_size`；
+2. 照着 `madrid-madrid.conf` 复制一份，改 `product` / `device` / `page_size` /
+   `page_offset`；
+3. `page_offset_trusted` 先写 `0`，确认过一次再改成 `1`（改成 1 之前会照常跑
+   `calibrate-b`，日志里的 `score` 就是对照依据）。
+
+---
+
+## 越狱流程与耗时优化
+
+2026-10-31 真机全链路首次跑通耗时 **39 秒**（`15:03:37 → 15:04:16`），逐段拆开：
+
+| 阶段 | 首次耗时 | 优化后（预计） |
+|---|---|---|
+| `calib_a` 第一段（k_itimer 探针 + 解 slide） | 11 s | ~5 s |
+| `calib_b`（`page_offset` 扫描） | 9 s | **0 s**（命中机型配置时跳过） |
+| `exploit` 注入（SELinux 翻转 + 伪造 cred） | 15 s | 15 s |
+| KSU 接管 | 4 s | 4 s |
+
+### ① raw 采集不再空转到超时（`calib.c`）
+
+`trace_pipe_raw` 是**活管道**：per-CPU 环形缓冲排空后不会 EOF，只能靠超时收尾。
+旧实现一直 poll 到 8 秒超时，实测「text trace 抓到」到「captured raw=…」之间
+整整隔了 7 秒 —— 那 7 秒全在空转。
+
+现在改成**空闲早停**：连续 400 ms 没有新数据就认为读完了（采集前 `tracing_on`
+已关，缓冲里的数据是冻结的，排空即结束）。`seconds` 仍作为硬上限保留。
+一条都没读到时仍按老行为等到超时 —— 避免把「没抓到」误判成「抓完了」。
+
+> `cred` / `task_struct` 的调用点**本来就是从文本 trace 解析的**
+> （`resolve_alloc_site_by_name()` → `text_trace_collect_sites()`），
+> 14 MB 的 raw 只用于 slide 的**交叉验证**与文本路径失效时的兜底。
+
+### ② `calibrate-b` 在命中机型配置时跳过
+
+见上文「机型配置」。
+
+### ③ KSU 接管：ksud 候选阶梯（`ksu.c`）
+
+设备上同时存在两个不同版本的 ksud：
+
+| 来源 | 大小 | 能力 |
+|---|---|---|
+| KernelSU 管理器里的 `libksud.so` | 4 990 848 B | 旧版，只认 `-h` / `-V`，**不支持 `late-load` / daemon** |
+| APK 自带的 `assets/ksu/ksud` | 6 402 736 B（sha256 `049491e2b4cc0a6c…`） | 与本 APK 的 KMI 集配套 |
+
+旧实现只取第一个存在的候选（永远是管理器那个），于是接管时 `late-load` 只打印
+一段帮助、daemon 起不来 —— 表现为「模块加载了，但 `/system/bin/sh: su:
+inaccessible or not found`」。
+
+现在把**所有**候选交给接管脚本，按顺序试：每个候选先 `late-load --kmi`、
+再裸 `late-load`，模块注册成功后才用它起 daemon（用 `pidof ksud` 确认），
+日志里记 `ksud_used=`。起 daemon 必须用真正能 `late-load` 的那个构建，
+否则旧构建只会打印帮助后退出。
+
+### ⚠️ 提权后 SELinux 会停在 Permissive
+
+`uaf_plant.c` 在伪造 cred 之前会**主动把内核的 `selinux_state` 改写掉**，
+把 SELinux 从 Enforcing 切成 Permissive（最多重试 12 次，日志里能看到
+`[selinux] attempt N/12` / `[selinux] already permissive`）。
+
+这是利用链路的一环，**本工具不会自动恢复**。想恢复：
+
+```bash
+adb reboot                  # 最干净：内核启动即 Enforcing
+adb shell setenforce 1      # 或直接推回去（需要 root）
+```
+
+> 只有 `ksu-takeover` 阶段成功加载 KernelSU 后，内核才会把 SELinux 推回 Enforcing。
+> 而 `ksu-takeover` 会改写 boot 分区、bootloader 未解锁的设备可能变砖，
+> 所以**默认只跑到 `verify` 阶段** —— 也就意味着跑完之后 SELinux 会留在 Permissive。
 
 ---
 

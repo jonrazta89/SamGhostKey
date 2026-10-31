@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "1.1.5"
+val appVersionName = "1.1.6"
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -39,7 +39,7 @@ android {
         applicationId = "com.EternalTimes.GhostKey"
         minSdk = 31
         targetSdk = 35
-        versionCode = 18
+        versionCode = 19
         versionName = appVersionName
 
         externalNativeBuild {
