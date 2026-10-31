@@ -74,8 +74,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
     }
 
     buildFeatures {
@@ -87,6 +87,9 @@ android {
         // Cve98260UserService 是 Shizuku UserService（非标准 android.app.Service），
         // Manifest 中的声明是 Shizuku 模式要求，Instantiatable 检查在此属误报
         disable += "Instantiatable"
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(27))
+        }
     }
 
     packaging {
@@ -115,7 +118,13 @@ android {
 // AGP 9 内置 Kotlin：kotlinOptions DSL 已移除，改用顶层 kotlin{} 的 compilerOptions
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_27)
+    }
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(27))
     }
 }
 
