@@ -25,6 +25,7 @@ app/keystore/
 
 # 发布产物（APK/zip 构建输出，体积大，不纳入版本库）
 dist/
+release/
 
 # 工具运行时目录（不纳入版本库）
 .workbuddy/

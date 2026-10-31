@@ -65,7 +65,8 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 ./gradlew assembleRelease
 ```
 
-产物路径：`app/build/outputs/apk/release/GhostKey-1.1.4-arm64-v8a-release.apk`
+产物路径：`app/build/outputs/apk/release/GhostKey-1.1.4-arm64-v8a-release.apk`，
+交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.4-arm64-v8a-release.apk`）。
 
 ---
 
@@ -205,7 +206,7 @@ python3 tool/mkprofile.py boot.img \
 
 ## 版本约定
 
-- 产物统一命名 `GhostKey-<ver>-release.apk` 后交付 `dist/`（该目录已被 `.gitignore` 忽略，不进版本库）。
+- 产物统一命名 `GhostKey-<ver>-release.apk`，构建后复制到仓库根的 `release/`（该目录已被 `.gitignore` 忽略，不进版本库），并以 **GitHub Release 附件**的形式发布。
 
 ---
 
