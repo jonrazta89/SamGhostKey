@@ -35,7 +35,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 | 产物命名 | `GhostKey-<版本>-arm64-v8a-release.apk` |
 
-当前版本：**1.1.4**（versionCode 17，包名 `com.GhostKey.app`）。
+当前版本：**1.1.4**（versionCode 17，包名 `com.EternalTimes.GhostKey`）。
 
 ---
 
@@ -72,7 +72,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 
 ```
 app/src/main/
-├── kotlin/com/GhostKey/app/
+├── kotlin/com/EternalTimes/GhostKey/
 │   ├── Cve98260Application.kt        # Application 入口
 │   ├── data/                       # 内核 profile 加载/解析/存储
 │   │   ├── Profile.kt              # 内核 profile 数据模型
@@ -92,7 +92,7 @@ app/src/main/
 │   ├── shizuku/                   # Cve98260UserService / ShizukuPermissionManager
 │   ├── ui/                        # Compose 界面（MainScreen / LogViewerScreen / SettingsScreen）
 │   └── viewmodel/                 # ExploitViewModel
-├── aidl/com/GhostKey/app/shizuku/ # Shizuku 跨进程接口
+├── aidl/com/EternalTimes/GhostKey/shizuku/ # Shizuku 跨进程接口
 ├── cpp/                           # Native exploit（CMake 构建为 libcve98260.so）
 └── assets/ksu/                    # ksud 二进制
 ```
@@ -115,7 +115,7 @@ app/src/main/
 
 - OPPO Find X8 Ultra（PKJ110）— 内核 `6.6.118-android15-...`
 
-具体内核画像以 `app/src/main/kotlin/com/GhostKey/app/data/BuiltinProfileCatalog.kt` 与各 `*.profile` 资源为准。
+具体内核画像以 `app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt` 与各 `*.profile` 资源为准。
 
 ---
 

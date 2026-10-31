@@ -6,16 +6,16 @@
 
 # Shizuku UserService：以字符串类名传给 ComponentName，由 Shizuku 反射实例化，
 # 类名一旦混淆直接 ClassNotFoundException
--keep class com.GhostKey.app.shizuku.Cve98260UserService { *; }
+-keep class com.EternalTimes.GhostKey.shizuku.Cve98260UserService { *; }
 
 # AIDL 接口与 Stub：跨进程 Binder 序列化，DESCRIPTOR/CREATOR 反射访问
--keep class com.GhostKey.app.shizuku.ICve98260UserService { *; }
--keep class com.GhostKey.app.shizuku.ICve98260UserService$* { *; }
--keep class com.GhostKey.app.shizuku.ICve98260Callback { *; }
--keep class com.GhostKey.app.shizuku.ICve98260Callback$* { *; }
+-keep class com.EternalTimes.GhostKey.shizuku.ICve98260UserService { *; }
+-keep class com.EternalTimes.GhostKey.shizuku.ICve98260UserService$* { *; }
+-keep class com.EternalTimes.GhostKey.shizuku.ICve98260Callback { *; }
+-keep class com.EternalTimes.GhostKey.shizuku.ICve98260Callback$* { *; }
 
 # ViewModel：AndroidViewModelFactory 通过反射 getConstructor 创建实例
--keep class com.GhostKey.app.viewmodel.ExploitViewModel {
+-keep class com.EternalTimes.GhostKey.viewmodel.ExploitViewModel {
     <init>(android.app.Application);
 }
 

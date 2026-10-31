@@ -32,11 +32,11 @@ fun loadSigningPassword(propName: String): String {
 }
 
 android {
-    namespace = "com.GhostKey.app"
+    namespace = "com.EternalTimes.GhostKey"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.GhostKey.app"
+        applicationId = "com.EternalTimes.GhostKey"
         minSdk = 31
         targetSdk = 35
         versionCode = 17
