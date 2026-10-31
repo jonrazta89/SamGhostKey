@@ -13,6 +13,7 @@ add_executable(libcve98260.so
     pc98260_su.c
     timer_probe.c
     kernel_table.c
+    slide_resolve.c
     calib_core.c
     calib.c
     ksu.c

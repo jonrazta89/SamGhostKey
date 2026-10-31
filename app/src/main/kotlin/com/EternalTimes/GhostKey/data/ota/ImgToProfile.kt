@@ -18,7 +18,8 @@ import com.EternalTimes.GhostKey.data.ProfileDocument
  *   - 常量：
  *       page_offset  = 0xFFFFFF8000000000（arm64 PAGE_OFFSET）- 0x80000000（SM8750 DRAM 起始）
  *                    = 0xFFFFFF7F80000000（直接映射基址，与 pkj110.conf 一致）
- *       kitimer_node = 0x78（src/uaf_plant.c 编译期覆盖值，非 offsets.h 的 0x0）
+ *       kitimer_node = BTF 实测：k_itimer.it + cpu_timer.node（6.18=0xe0，6.6=0x78）
+ *                    ※ 写死 0x78 只对 6.6 成立；6.18 上必须用 BTF 实测值
  *
  * 若某符号在 kallsyms 中缺失（去歧义后未命中），对应字段不写入，
  * 由 [com.EternalTimes.GhostKey.data.ProfileDocument.missingRequiredFields] 回报给用户。
@@ -49,8 +50,13 @@ object ImgToProfile {
     /** SM8750/PKJ110 DRAM 起始物理地址。 */
     private const val DRAM_PHYS_START = 0x80000000L
 
-    /** kitimer_node 编译期生效值（pkj110.conf 注释：src/uaf_plant.c 重新 #define 为 0x78）。 */
-    private const val KITIMER_NODE = 0x78L
+    /**
+     * kitimer_node 兜底值：6.6 的 0x78（src/uaf_plant.c 编译期覆盖值）。
+     *
+     * 仅在 BTF 里取不到 k_itimer/cpu_timer 布局时使用；
+     * 正常路径一律用 BTF 实测值（6.18 是 0xe0，不是 0x78）。
+     */
+    private const val KITIMER_NODE_FALLBACK = 0x78L
 
     fun toProfileDocument(
         info: BootImageParser.ExtractedKernelInfo,
@@ -97,7 +103,13 @@ object ImgToProfile {
             }
         }
 
-        offset["kitimer_node"] = KITIMER_NODE
+        // kitimer_node = k_itimer.it 的偏移 + cpu_timer.node 的偏移（6.18=0xe0，6.6=0x78）
+        val kitimerNode = run {
+            val it = info.kItimerLayout?.memberOffsets?.get("it")
+            val node = info.cpuTimerLayout?.memberOffsets?.get("node")
+            if (it != null && node != null) it + node else null
+        }
+        offset["kitimer_node"] = kitimerNode ?: KITIMER_NODE_FALLBACK
 
         val fields = LinkedHashMap<String, Any?>()
         fields["release"] = release

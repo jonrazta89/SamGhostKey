@@ -31,18 +31,29 @@ fi
 
 OUT_DIR="$TEST_DIR/.build"
 mkdir -p "$OUT_DIR"
-BIN="$OUT_DIR/test_calib_core"
+
 case "$(uname -s 2>/dev/null || echo unknown)" in
-    MINGW*|MSYS*|CYGWIN*) BIN="$BIN.exe" ;;
+    MINGW*|MSYS*|CYGWIN*) BIN_SUFFIX=".exe" ;;
+    *) BIN_SUFFIX="" ;;
 esac
 
 echo "== 编译测试 =="
 echo "   CC = $CC"
+
+# T1-a：calib_core 的纯计算单测（slide_from_timers.py / solve_lmap.py 的核心）
 "$CC" -std=c11 -O1 -g -Wall -Wextra \
     -I "$CPP_DIR" \
     "$CPP_DIR/calib_core.c" \
     "$TEST_DIR/test_calib_core.c" \
-    -o "$BIN"
+    -o "$OUT_DIR/test_calib_core$BIN_SUFFIX"
+
+# T1-b：slide_resolve 的 KASLR slide 精确解算单测（6.18 适配新增）
+"$CC" -std=c11 -O1 -g -Wall -Wextra \
+    -I "$CPP_DIR" \
+    "$CPP_DIR/slide_resolve.c" \
+    "$TEST_DIR/test_slide_resolve.c" \
+    -o "$OUT_DIR/test_slide_resolve$BIN_SUFFIX"
 
 echo "== 运行测试 =="
-"$BIN"
+"$OUT_DIR/test_calib_core$BIN_SUFFIX"
+"$OUT_DIR/test_slide_resolve$BIN_SUFFIX"
