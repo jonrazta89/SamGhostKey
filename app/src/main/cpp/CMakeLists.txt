@@ -16,6 +16,7 @@ add_executable(libcve98260.so
     slide_resolve.c
     calib_core.c
     calib.c
+    rawscan.c
     ksu.c
     ksu_script.c
 )

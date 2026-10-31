@@ -61,9 +61,17 @@ echo "   CC = $CC"
     "$TEST_DIR/test_ksu_script.c" \
     -o "$OUT_DIR/test_ksu_script$BIN_SUFFIX"
 
+# T1-d：rawscan 的增量记录扫描单测（uaf 受害者选取）
+"$CC" -std=c11 -O1 -g -Wall -Wextra \
+    -I "$CPP_DIR" \
+    "$CPP_DIR/rawscan.c" \
+    "$TEST_DIR/test_rawscan.c" \
+    -o "$OUT_DIR/test_rawscan$BIN_SUFFIX"
+
 echo "== 运行测试 =="
 "$OUT_DIR/test_calib_core$BIN_SUFFIX"
 "$OUT_DIR/test_slide_resolve$BIN_SUFFIX"
+"$OUT_DIR/test_rawscan$BIN_SUFFIX"
 (cd "$OUT_DIR" && "$OUT_DIR/test_ksu_script$BIN_SUFFIX")
 
 # 生成的接管脚本做一次 shell 语法检查（脚本在设备上由 rootd 以 uid=0 执行，

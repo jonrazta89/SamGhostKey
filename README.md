@@ -36,7 +36,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 | 产物命名 | `GhostKey-<版本>-arm64-v8a-release.apk` |
 
-当前版本：**1.1.8**（versionCode 21，包名 `com.EternalTimes.GhostKey`）。
+当前版本：**1.1.9**（versionCode 22，包名 `com.EternalTimes.GhostKey`）。
 
 ---
 
@@ -66,7 +66,7 @@ GhostKey 是一款面向 **已授权安全研究 / 自用设备** 的 Android �
 ```
 
 产物路径：`app/build/outputs/apk/release/GhostKey-1.1.4-arm64-v8a-release.apk`，
-交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.8-arm64-v8a-release.apk`）。
+交付副本放在仓库根的 `release/`（`release/GhostKey-1.1.9-arm64-v8a-release.apk`）。
 
 ---
 
@@ -451,6 +451,45 @@ stage 脚本、重启管理器之后就退出了；用户态组件由 `late_load
 > `su replacement target missing`；v1.1.8 改成轮询等待（最多 6 秒），
 > 并且只在模块确实注册了（`LIVE=yes`）时才等 —— 模块没起来时 `late-load`
 > 会提前 return，根本不会去装，空等毫无意义。
+
+### ⑤ UAF 采集：多 CPU + 空闲早停（v1.1.9）
+
+`exploit` 阶段要反复跑「UAF cycle」：造一个 k_itimer、把它释放、让页被复用、
+在页里摆一份伪造的 cred。每个 cycle ~2.9 秒，一轮下来 4 个 cycle ≈ 12 秒。
+
+**这 2.9 秒里有 ~2.0 秒是纯死等。** 旧实现 `collect_nth()` 的流程是：
+
+```c
+alarm(2);                              /* 兜底 2 秒 */
+while (...) read(cpu0/trace_pipe_raw); /* 阻塞读 */
+```
+
+而它是在 `tracing_on=0` **之后**才读的 —— 此时环形缓冲已经冻结、不会再有新记录，
+那 2 秒全花在阻塞的 `read()` 上。真机 2026-10-31 17:42 那轮日志，
+`[trace] kmem_cache_alloc armed` → `[uaf] captured=2048` 正好隔了 2 秒。
+
+v1.1.9 改成：
+
+| 改动 | 说明 |
+|---|---|
+| **多 CPU 采集** | 造 timer 的子进程**不绑核**，记录可能落在任意 CPU 上。旧实现只读 cpu0，cpu0 上有时一条都捞不到（`[uaf] too many timers`）。现在 `poll()` 同时监听所有 CPU 的 `trace_pipe_raw` |
+| **每 CPU 400ms 空闲早停** | 某个 CPU 安静满 400ms 就摘掉它 —— tracing 已关，它就是空的，再等没意义。`calib.c` 早就是这套（`capture_raw` 的 `RAW_IDLE_MS`） |
+| **增量扫描** | 边读边扫，不再「读完 8MB 再扫一遍」。扫描逻辑抽到 `rawscan.c`（纯计算，有宿主单测） |
+
+**语义保持**：仍然先读完 cpu0 再考虑其它 CPU，所以 cpu0 记录够用时，
+候选数组的内容与顺序跟旧实现**完全一致** → 选中的 UAF 受害者也完全一致；
+cpu0 不够时才去补其它 CPU（只增不减）。
+
+> **衔接字节是 31 不是 32。** 一条 trace 记录占 32 字节，上一块结束于流位置
+> `end` 时，下一个还没被扫过的起点是 `end-31`，它的记录要跨块。所以衔接必须
+> 带 **31** 字节 —— 带 32 会把「上一轮已经扫过的那个起点」再扫一遍，命中数
+> 就会重复计数（`rawscan.c` 的宿主单测专门钉了这条）。
+
+**还没做的更大的优化**：目前受害者是「第 1024 条命中记录」，等于随机挑。
+而 child 的 cred 地址（`g_task + TASK_CRED`）在日志里是已知的 ——
+若按「`node_off` 与 child cred 偏移一致」来挑受害者，能把多轮重试压成一轮。
+但这会改变受害者的选取逻辑、进而改变页复用概率，**必须真机验证**，所以没敢
+和这次的性能改动混在一起发。
 
 ### ⚠️ 关于提权后的 SELinux 状态
 
