@@ -78,7 +78,12 @@ class RunLogStore(private val dir: File) {
     /** 正在写入的文件名集合：用来把「还没写收尾行」的当下运行标记成 RUNNING。 */
     private val active = mutableSetOf<String>()
 
-    /** 开始一次运行，返回可追加/收尾的会话。 */
+    /**
+     * 开始一次运行，返回可追加/收尾的会话。
+     *
+     * [runId] 由 [nextRunId] 分配；这里会把它记进序号计数器，
+     * 保证「删掉某条记录」之后序号不会回退。
+     */
     @Synchronized
     fun begin(runId: Int, device: String, kernel: String, profile: String): Session {
         if (!dir.exists()) dir.mkdirs()
@@ -93,6 +98,7 @@ class RunLogStore(private val dir: File) {
         }
         tryQuietly { file.createNewFile() }
         active.add(file.name)
+        rememberRunId(runId)
         val session = Session(file, runId, now)
         session.writeHeader(sanitize(device), sanitize(kernel), sanitize(profile))
         prune()
@@ -108,9 +114,20 @@ class RunLogStore(private val dir: File) {
             .sortedByDescending { it.startedAt }
     }
 
-    /** 下一次运行的序号（已有最大序号 + 1）。跨重启延续编号，不会回到 1。 */
+    /** 记录条数（只数文件，不解析头尾）——设置页的「N 次」用这个。 */
     @Synchronized
-    fun nextRunId(): Int = (listRuns().maxOfOrNull { it.runId } ?: 0) + 1
+    fun countRuns(): Int =
+        dir.listFiles { f -> f.isFile && f.name.endsWith(EXT) }?.size ?: 0
+
+    /**
+     * 下一次运行的序号。
+     *
+     * 序号**不从现有日志文件的最大值推导**：删掉某条记录之后，从文件推导会让
+     * 序号回退，界面上就会出现「第 3 次运行」排在「第 7 次运行」后面这种错乱。
+     * 这里取「计数器文件里记的值」与「文件名里能解析出的序号」两者的最大值 + 1。
+     */
+    @Synchronized
+    fun nextRunId(): Int = lastUsedRunId() + 1
 
     /** 读取某次运行的日志正文（去掉头尾键值块）。IO 密集，请放在后台线程。 */
     fun readBody(meta: RunLogMeta): List<String> {
@@ -157,6 +174,7 @@ class RunLogStore(private val dir: File) {
     fun delete(meta: RunLogMeta) {
         synchronized(this) { active.remove(meta.file.name) }
         tryQuietly { meta.file.delete() }
+        /* 序号计数器不动：删掉一条记录不该让「第 N 次」回退。 */
     }
 
     @Synchronized
@@ -165,8 +183,43 @@ class RunLogStore(private val dir: File) {
         for (f in files) {
             if (!active.contains(f.name)) tryQuietly { f.delete() }
         }
+        /* 清空 = 全部历史不要了，序号也从头开始（这是用户显式的重置）。 */
+        tryQuietly { idFile().delete() }
     }
 
+    /**
+     * 已经用掉的最大序号。
+     *
+     * 取两个来源的较大值：
+     *   · 计数器文件（正常路径下最准，删记录也不会丢）；
+     *   · 文件名里的序号（计数器文件丢了还能续上，比如换了应用数据目录）。
+     */
+    @Synchronized
+    private fun lastUsedRunId(): Int {
+        var max = 0
+        tryQuietly {
+            val f = idFile()
+            if (f.exists()) max = maxOf(max, f.readText().trim().toIntOrNull() ?: 0)
+        }
+        tryQuietly {
+            for (f in dir.listFiles() ?: emptyArray()) {
+                if (!f.isFile || !f.name.endsWith(EXT)) continue
+                max = maxOf(max, seqFromFileName(f.name) ?: 0)
+            }
+        }
+        return max
+    }
+
+    /** 记下已分配到的序号（只增不减）。 */
+    private fun rememberRunId(runId: Int) {
+        tryQuietly {
+            val f = idFile()
+            val cur = if (f.exists()) f.readText().trim().toIntOrNull() ?: 0 else 0
+            if (runId > cur) f.writeText(runId.toString())
+        }
+    }
+
+    private fun idFile(): File = File(dir, ID_FILE)
 
     /** 只保留最近 [MAX_RUNS] 次，超出时删最旧的（不动正在写的）。 */
     private fun prune() {
@@ -207,8 +260,7 @@ class RunLogStore(private val dir: File) {
             }
         }
         if (runId <= 0) {
-            runId = Regex("-([0-9]{4,})(?:-[0-9]+)?\\.log$").find(file.name)
-                ?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+            runId = seqFromFileName(file.name) ?: 0
         }
         if (startMs <= 0L) startMs = file.lastModified()
         val finalResult = when {
@@ -340,6 +392,8 @@ class RunLogStore(private val dir: File) {
     companion object {
         private const val DIR = "run_logs"
         private const val EXT = ".log"
+        /** 序号计数器文件名（同一目录下的隐藏文件，不参与记录列表）。 */
+        private const val ID_FILE = ".run-id"
         private const val BODY_BEGIN = "=== log ==="
         private const val BODY_END = "=== end ==="
         private const val K_RUN = "# run="
@@ -356,6 +410,18 @@ class RunLogStore(private val dir: File) {
 
         /** 最多保留的运行记录数（超出删最旧）。 */
         private const val MAX_RUNS = 40
+
+        /**
+         * 文件名里的序号：`run-<yyyyMMdd>-<HHmmss>-<seq>[-<dup>].log`。
+         *
+         * 必须**按完整格式**匹配，不能用「最后一个数字段」那种宽松写法 ——
+         * `run-20261102-191019-0003.log` 里既有时分秒 191019 也有序号 0003，
+         * 宽松正则会匹配到 191019，把它当成「第 191019 次运行」，序号从此爆炸。
+         */
+        private val RUN_FILE_RE = Regex("^run-\\d{8}-\\d{6}-(\\d{4,})(?:-\\d+)?\\.log$")
+
+        private fun seqFromFileName(name: String): Int? =
+            RUN_FILE_RE.find(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
         private fun hms(): String =
             SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())

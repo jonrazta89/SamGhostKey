@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,7 +69,11 @@ fun LogViewerScreen(viewModel: ExploitViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var opened by remember { mutableStateOf<RunLogMeta?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
-    val runs = remember(refreshKey) { viewModel.listRunLogs() }
+    /* 列表要扫目录并逐个读头尾，是磁盘 IO —— 放后台线程，
+       否则打开这个页面会在主线程上读几十个文件。 */
+    val runs by produceState(initialValue = emptyList<RunLogMeta>(), refreshKey) {
+        value = withContext(Dispatchers.IO) { viewModel.listRunLogs() }
+    }
 
     val current = opened
     if (current == null) {

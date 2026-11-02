@@ -237,7 +237,10 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "日志") {
-                val runCount = remember { viewModel.listRunLogs().size }
+                /* 次数由 ViewModel 持有并随增删刷新；之前这里用
+                   remember { viewModel.listRunLogs().size }，只算一次且在主线程做磁盘 IO，
+                   跑完一轮 ROOT 回来看到的还是旧数字。 */
+                val runCount = uiState.runLogCount
                 OutlinedButton(onClick = onOpenLogs) {
                     Text("查看运行记录（$runCount 次）")
                 }

@@ -96,6 +96,9 @@ data class ProfileDocument(
             credUserNs = (getLong("offset.cred_user_ns") ?: 144L).toInt(),
             credUcounts = (getLong("offset.cred_ucounts") ?: 152L).toInt(),
             credGroups = (getLong("offset.cred_groups") ?: 160L).toInt(),
+            device = getString("device")?.trim()?.takeIf { it.isNotEmpty() },
+            source = getString("_source")?.trim()?.takeIf { it.isNotEmpty() },
+            imageSha256 = getString("_image_sha256")?.trim()?.takeIf { it.isNotEmpty() },
         )
     }
 
@@ -154,6 +157,9 @@ data class ProfileDocument(
                 "page_offset" to kp.pageOffset,
                 "offset" to offset,
             )
+            kp.device?.let { fields["device"] = it }
+            kp.source?.let { fields["_source"] = it }
+            kp.imageSha256?.let { fields["_image_sha256"] = it }
             return ProfileDocument(release = kp.release, fields = fields)
         }
     }

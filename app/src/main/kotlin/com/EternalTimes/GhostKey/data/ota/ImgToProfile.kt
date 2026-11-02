@@ -32,6 +32,23 @@ object ImgToProfile {
     /** prepare_creds 内返回指令偏移（PC 端 make.py 硬编码）。 */
     private const val CRED_LINK_INNER_OFFSET = 0x24L
 
+    /*
+     * ⚠️ 6.18 的 link 语义与这里**不一致**，别拿这里的输出覆盖仓库里已有的
+     * 6.18 profile。
+     *
+     * 实测（2026-11-02，小米 OS4.0.27.0 港版 OTA 的 boot.img，与仓库 6.18
+     * profile 的 _image_sha256 逐字相同）：
+     *   仓库 profile : timer_link = do_timer_create + 0x0  ← 符号**起始**地址
+     *                  cred_link  = prepare_creds  + 0x0
+     *   这里生成     : timer_link = do_timer_create + 0xa8
+     *                  cred_link  = prepare_creds  + 0x24
+     * 差的就是下面这两个 make.py 的函数内偏移（6.6 时代的假设）。slide_addr()
+     * 会把它当成符号地址直接加 slide，于是偏 0xa8 / 0x24。
+     *
+     * 6.18 的运行时解析走 calib_a 的「符号名匹配」而不是这些 link 值，所以
+     * 注入本身不受影响；但导出的 profile 若被别的路径当权威值用就会出错。
+     */
+
     /**
      * copy_process 内 `kmem_cache_alloc_node(task_struct_cachep, …)` 的返回地址偏移。
      *

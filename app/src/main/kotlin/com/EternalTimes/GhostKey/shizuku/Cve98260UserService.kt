@@ -279,6 +279,25 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                     "<s> native daemon (page holder + rootd) stays resident by design, " +
                         "same as the PC reference implementation",
                 )
+                /*
+                 * KSU 接管用的是**运行时加载**（late-load）的内核模块，这个模块会一直
+                 * 留在内核里，直到**完整重启**（kernel reboot）才被卸载。
+                 *
+                 * 而「软重启」（userspace reboot / svc power reboot）只重启用户态：
+                 * 内核不动 → 模块留下，但它的用户态配套（ksud、init 时序）全没了。
+                 * 这个组合最容易在下次启动时出问题：boot 阶段的 init 碰到一个
+                 * 「状态残缺的旧模块」，可能连着崩几轮 system_server，
+                 * 表现就是「软重启成功几秒后又自动软重启」，甚至变成普通重启。
+                 *
+                 * → 明确告诉用户：接管之后要**完整重启**（adb reboot / 长按电源），
+                 *   不要用软重启收场。
+                 */
+                callback?.onLog(
+                    "<b> 提示：KSU 模块是运行时加载的，会一直留在内核里。" +
+                        "收场请用**完整重启**（adb reboot 或长按电源），" +
+                        "不要用软重启 —— 软重启会留下状态残缺的模块，" +
+                        "下次开机可能反复自动重启。",
+                )
             } else {
                 callback?.onLog(
                     "<s> warn: KSU takeover not confirmed, " +
@@ -1298,7 +1317,20 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
 
     override fun destroy() {
         if (!running.get()) {
-            tryQuietly { exploitProcess?.destroy() }
+            /*
+             * ⚠️ 这里**绝不能**对 exploit 父进程发信号（Process.destroy() = SIGTERM）。
+             *
+             * 父进程正是钉住那批被 UAF 回收的页的进程：杀掉它 → 页被提前释放 →
+             * 仍持有伪造 cred 的 cred 子进程 / 经 rootd 拉起的 ksud 随后踩到悬空
+             * 指针 → kernel panic → 设备重启。真机 2026-10-31 22:11 已经因此关机
+             * 过一次；当时只把 socket 清理路径改成「绝不对任何进程发信号」，
+             * destroy() 这条漏网了。
+             *
+             * 口径与 teardown 一致（见「native process stays resident ... leaving it
+             * alive is safer than freeing the borrowed cred」）：留在原地比释放
+             * 借来的 cred 安全。残留进程由 runChain 的 [4] 前置检查处理 ——
+             * 发现残留直接中止并提示重启。
+             */
             kotlin.system.exitProcess(0)
         }
     }

