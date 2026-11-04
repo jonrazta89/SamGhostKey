@@ -89,6 +89,23 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         /** 安全退场：等待 exploit 父进程退出的超时 */
         private const val EXPLOIT_EXIT_TIMEOUT_SEC = 20L
 
+        /**
+         * 上一次真正开始喷洒（INJECT 阶段）时的 boot_id。
+         *
+         * 一次成功的利用会把带内核指针的整页喷进内核 slab；那一页若被 cred slab
+         * 领走，某个 task 的 uid 就变成内核地址的低 32 位（负 userId），
+         * AMS 一扫描就抛 IllegalArgumentException -> system_server 崩溃 ->
+         * framework 重启循环。**脏 cred 在内核 slab 里，只有内核重启能清**，
+         * framework 重启清不掉。
+         *
+         * 所以「上次跑完没完整重启就再跑」= 直接踩进那个崩溃循环。
+         * 用 boot_id 把这条纪律自动化：boot_id 没变 == 没完整重启过。
+         */
+        private const val LAST_INJECT_BOOT_ID = "last_inject_boot_id.txt"
+
+        /** 返回码：上一次喷洒后设备没有完整重启过，本轮被拦下。 */
+        private const val RC_BOOT_ID_UNCHANGED = 6
+
         private const val RESULT_SLIDE = "slide.txt"
         private const val RESULT_PAGE_OFFSET = "page_offset.txt"
         private const val RESULT_PAGE_OFFSET_SCORE = "page_offset.score"
@@ -160,6 +177,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             //
             val stale = residualNativePids()
             if (stale.isNotEmpty()) return resolveResidual(stale, workDir, env, callback)
+            if (!bootIdGuard(workDir, callback)) return RC_BOOT_ID_UNCHANGED
             callback?.onLog("<b> cleaning up stale sockets and stop files")
             val staleFailed = cleanupStale(workDir)
             if (staleFailed > 0) {
@@ -237,6 +255,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             waitIdle()
 
             callback?.onProgress(stageIndex(Stage.INJECT), "running")
+            /*
+             * 从这一刻起内核 slab 可能已经被喷洒过 -> 记下当前 boot_id。
+             * 下一轮若 boot_id 没变，就说明设备没完整重启过，直接拦下。
+             */
+            markInjectBootId(workDir)
             val proc = startProcess(
                 listOf(
                     nativeLib.absolutePath, "exploit",
@@ -309,6 +332,47 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             tailer.interrupt()
             tryQuietly { tailer.join(800) }
         }
+    }
+
+    /**
+     * 当前内核启动标识。/proc/sys/kernel/random/boot_id 是 0444，shell 也能读。
+     * 读不到就返回 null —— 此时不做任何拦截：宁可放行，也不能因为读不到就误伤。
+     */
+    private fun currentBootId(): String? = runCatching {
+        File("/proc/sys/kernel/random/boot_id").readText().trim()
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * boot_id 守卫：上一次喷洒之后设备没有完整重启过，就拦下本轮。
+     *
+     * 拦它的理由不是「保守」，而是确定性的：一次成功的利用必然在内核 slab 里
+     * 留下一页带内核指针的内存，那一页一旦被 cred slab 领走，就有一个 task 的
+     * uid 变成负数（Invalid userId）-> system_server 崩溃循环；而脏 cred 只有
+     * 内核重启能清，软重启和 framework 重启都清不掉。
+     */
+    private fun bootIdGuard(workDir: File, callback: ICve98260Callback?): Boolean {
+        val cur = currentBootId() ?: return true
+        val prev = runCatching {
+            File(workDir, LAST_INJECT_BOOT_ID).readText().trim()
+        }.getOrNull()
+        if (prev.isNullOrEmpty() || prev != cur) return true
+        callback?.onLog("<s> error: 上一次提权之后设备没有完整重启过（boot_id 未变）")
+        callback?.onLog(
+            "<s> 内核 slab 里可能还留着上次喷洒的脏 cred：某个 task 的 uid 变成内核" +
+                "地址的低 32 位（负 userId），AMS 一扫描就抛 IllegalArgumentException，" +
+                "system_server 会进入崩溃循环。",
+        )
+        callback?.onLog(
+            "<b> 请先**完整重启**（adb reboot / 长按电源）再跑一次。" +
+                "软重启清不掉内核 slab。",
+        )
+        return false
+    }
+
+    /** 记录「本轮已经开始喷洒」的时刻对应的 boot_id。 */
+    private fun markInjectBootId(workDir: File) {
+        val cur = currentBootId() ?: return
+        tryQuietly { File(workDir, LAST_INJECT_BOOT_ID).writeText(cur) }
     }
 
     /**

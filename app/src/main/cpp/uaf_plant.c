@@ -899,6 +899,25 @@ static int spawn_helper(int (*fn)(void *), void *arg)
 	return pid;
 }
 
+/*
+ * mprotect 风暴的节流（~1 ms）。
+ *
+ * 为什么必须节流：locker_fn 对 195 MB / 50000 个 VMA 的区间做 PROT_NONE<->PROT_READ
+ * 翻转，mprotect 拿的是 mmap_lock **写锁**。满速循环时它会在两次调用之间立刻
+ * 重新抢锁 —— 而 Linux 的 mmap_lock 写锁**不保证公平**，正在等锁的 execve
+ * 可能被无限饿死：
+ *   - execve 拆 mm 需要 mmap_lock 写锁 -> 抢不到 -> 利用进程卡死；
+ *   - 而它**持有** mm 引用，整机所有要拿 mmap_lock 的路径一起卡住
+ *     -> 整机冻结 -> 看门狗重启。
+ * 这正是 run 8 的形状：「96 秒无任何输出、dropbox 全空、之后被看门狗重启」
+ * （userspace 崩溃必然留 dropbox 条目，所以那次不是 Java 崩溃）。
+ *
+ * 命中率不受影响：execve 只要求「正好有一次 mprotect 在飞行中」，
+ * 而拆一个 195 MB 的 mm 要几十毫秒 —— 1 ms 一次的节流几乎不损失命中概率，
+ * 却把写锁占用率降下来，让等锁的 execve 真的能拿到锁。
+ */
+#define LOCKER_MPROTECT_GAP_NS 1000000L
+
 static int locker_fn(void *arg)
 {
 	int prot = PROT_NONE;
@@ -917,6 +936,11 @@ static int locker_fn(void *arg)
 		if (rc && atomic_exchange_explicit(&g_mprotect_reported, 1, memory_order_relaxed) == 0)
 			dprintf(STDOUT_FILENO, "[locker] mprotect errno=%d\n", errno);
 		prot = prot == PROT_NONE ? PROT_READ : PROT_NONE;
+		{
+			struct timespec gap = { .tv_sec = 0,
+					       .tv_nsec = LOCKER_MPROTECT_GAP_NS };
+			nanosleep(&gap, NULL);
+		}
 	}
 	return 0;
 }
