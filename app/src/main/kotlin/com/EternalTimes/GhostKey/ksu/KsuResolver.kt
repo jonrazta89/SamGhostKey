@@ -47,7 +47,4 @@ class KsuResolver(private val context: Context) {
         is KsuSource.Bundled -> source.note
         is KsuSource.Unavailable -> "不可用：${source.reason}"
     }
-
-    /** 从 uname -r 提取 KMI（如 android15-8），用于 late-load 参数。 */
-    fun kmiOf(release: String): String? = Regex("android\\d+-\\d+").find(release)?.value
 }

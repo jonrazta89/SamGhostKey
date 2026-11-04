@@ -751,36 +751,12 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     }
 
     /**
-     * 判断某个进程持有的是"借来的伪造 cred"还是内核正规 cred。
-     *
-     * 判据用 SELinux 上下文：注入伪造 cred 的进程落在 unlabeled 域
-     * （真机日志里 rootd 通道的 `context=u:object_r:unlabeled:s0` 即此特征），
-     * 而持有正规 cred 的进程落在它自己的域里（如 KSU 的 u:r:ksu:s0）。
-     *
-     * 这是可验证的证据，不是猜测——父进程释放被 UAF 回收的页之前，必须确认
-     * 没有进程还停留在 unlabeled 域持有那份伪造 cred。
-     *
-     * 读取失败时一律按"持有伪造 cred"处理：读不到就无法证明安全，而放行退场
-     * 的代价是 kernel panic。失败必须偏向保守的一侧。
-     */
-    private fun holdsBorrowedCred(pid: Int): Boolean =
-        runCatching {
-            val ctx = File("/proc/$pid/attr/current").readText().trim()
-            ctx.isNotEmpty() && ctx.contains("unlabeled")
-        }.getOrDefault(true)
-
-    /** 仍在持有伪造 cred 的 ksud 守护 pid 列表。 */
-    private fun ksudOnBorrowedCred(ksud: File): List<Int> =
-        ksudDaemonPids(ksud).filter { holdsBorrowedCred(it) }
-
-    /**
      * 扫出所有落在 unlabeled 域的进程 pid —— 这些进程持有的都是注入的伪造 cred。
      *
      * 范围不限于 ksud：rootd、cred 子进程、以及 rootd fork 出的任何 uid=0 命令
      * 都算。父进程释放被 UAF 回收的页之前，必须确认这个集合为空。
      *
-     * 判据与 holdsBorrowedCred 一致（同一个 SELinux 上下文特征），避免两套
-     * 判据出现分歧。
+     * 判据即 SELinux 上下文落在 unlabeled 域（与正规 cred 的自有域如 u:r:ksu:s0 相区分）。
      */
     private fun unlabeledDomainPidsDirect(): List<Int> {
         val self = Process.myPid()
