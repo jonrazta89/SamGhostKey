@@ -101,6 +101,19 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
 
 ---
 
+## 反馈与适配请求
+
+遇到问题（提权失败、崩溃、异常重启等）或希望适配新的内核 / 机型，请到 [GitHub Issues](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/issues) 提交，并**优先附上内核信息**——profile 以内核 `uname -r` 精确匹配，这是定位问题的第一依据。
+
+请尽量包含：
+
+1. **内核版本 `uname -r`**（最优先，如 `6.18.21-android17-...`）。
+2. **运行日志**：设置页「查看运行记录」导出，或设备上 `/data/local/tmp/cve98260-app/` 下的日志文件。
+3. 机型与 Android 版本、复现步骤、所用 App 版本（界面底部 `v<版本> · <commit>`）。
+4. 涉及崩溃 / 重启时，可运行 `tool/collect_reboot_evidence.sh` 采集 pstore / dropbox / crash buffer / avc 等证据一并附上。
+
+---
+
 ## 许可证
 
 仅供授权安全研究与自用设备测试。任何超出授权范围的用途均不在许可范围内。
