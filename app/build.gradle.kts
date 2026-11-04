@@ -17,8 +17,9 @@ val appVersionBase = "2.1.0"
  * 界面标题显示 `v2.1.0-test · <commit>`、系统「应用信息」里也显示 2.1.0-test，
  * 不会和将来的正式版 2.1.0 混淆（之前 test 包直接用 `2.1.0`，一眼看去
  * 跟正式版一模一样，这是真机实测时发现并修掉的）。
+ * alpha 预发布用 `alphaNN`（如 2.1.0-alpha01），沿用 .test 包名与发布方式。
  */
-val variantLabel = "test"
+val variantLabel = "alpha01"
 
 /**
  * 最终版本名，例如 `2.1.0-test`。变体标识为空时就是基础版本号本身
@@ -88,11 +89,11 @@ android {
          * versionCode 分两条线，互不占用：
          *   · 正式版线（com.EternalTimes.GhostKey）      小整数递增：1.1.4=17 … 2.0.0=24
          *   · test 线   （com.EternalTimes.GhostKey.test）独立号段：2.0.0-alpha01..03 = 20001..20003，
-         *     2.1.0 线 = 21001（2.1 → 21xxx）。
+         *     2.1.0 线 = 21001（-test 构建）/ 21002（2.1.0-alpha01）（2.1 → 21xxx）。
          * 之前 test 包直接用了 25 —— 那是正式版线的下一个号，正式版 2.1.0 发布时
          * 必然撞号；两者的包名不同，Android 不会拦，但号段混在一起以后很难排查。
          */
-        versionCode = 21001
+        versionCode = 21002
         versionName = appVersionName
         // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
         buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")
