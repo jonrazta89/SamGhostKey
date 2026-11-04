@@ -91,6 +91,8 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
 
 - **SELinux**：利用链会临时把 SELinux 由 Enforcing 改为 Permissive。只跑到 `verify` 时结束后保持 Permissive；`ksu-takeover` 成功后内核会切回 Enforcing。需要时 `adb reboot` 恢复。
 - **KernelSU 的 su**：KSU 没有 `/system/bin/su` 文件，内核在 `execve` 阶段按调用方 uid 替换 `su`，只有被授权的 uid 才探测得到。本工具走 App 自身 uid 通道探测。
+- **内置 ksud 与维护**：`ksu-takeover` 阶段用 `ksud late-load` 加载 KernelSU 模块（默认只到 `verify` 不触发）。APK 内置一份 `assets/ksu/ksud`（KernelSU v3.3.1，内嵌多套 KMI 的 `.ko`，KMI 集**冻结在打包时刻**）作为首选候选；接管时也会优先复用**设备已装管理器**里的 `libksud.so`（版本随管理器走、无需更新本应用）。内置产物由 `assets/ksu/ksud.manifest` 记录版本与 `sha256`，构建时（`preBuild`）自动校验；换二进制后运行 `python3 tool/check_ksud.py --update` 同步清单。
+- **SuKiSu 支持**：SukiSU / SukiSU Ultra（`com.sukisu.ultra`）、ReSukiSU、KernelSU-Next 等 KernelSU fork 的管理器仍携带 `libksud.so`、late-load 语义一致、模块仍注册为 `kernelsu`，因此**直接复用设备已装的 SuKiSu** 完成接管，无需为本应用单独打包 SuKiSu 产物。
 - **allow_shell**（默认关闭）：如需 shell（uid 2000）也能用 su，设备侧写开关文件后**必须重新加载模块**才生效：`adb shell 'echo 1 > /data/local/tmp/cve98260-app/allow_shell'`。
 
 ---

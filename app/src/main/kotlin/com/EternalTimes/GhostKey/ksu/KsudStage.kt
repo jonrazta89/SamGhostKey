@@ -20,12 +20,19 @@ object KsudStage {
     /** 提取目标路径（shell uid 可写；同时也在 ksu.c find_ksud 兜底链里）。 */
     const val TARGET: String = "/data/local/tmp/ksud"
 
-    /** KSU 管理器候选包名（优先级顺序，对齐参考 ManagerScanner 的家族列表）。 */
+    /** KSU 管理器候选包名（优先级顺序，对齐参考 ManagerScanner 的家族列表）。
+     *
+     * 覆盖 KernelSU 官方 + 主流 fork（KernelSU-Next / SukiSU Ultra / ReSukiSU / Bakasu 等）。
+     * SukiSU 系（`com.sukisu.ultra`）是 KernelSU fork：其管理器仍带 `libksud.so`、late-load
+     * 语义一致、模块仍注册为 `kernelsu`，故可直接复用本接管链路（无需内置 SuKiSu 产物）。
+     * 这只是**快速通道**；未列出的自编译 fork 由下方 `scanManagerLib` 的全量「认文件不认包名」扫描兜住。
+     */
     private val MANAGER_PACKAGES = listOf(
         "me.weishu.kernelsu",
         "me.weishu.kernelsu.prerelease",
         "me.weishu.kernelsu.next",
         "com.rifsxd.ksunext",
+        "com.sukisu.ultra",
         "com.resukisu.resukisu",
         "org.bakasu.bakasu",
         "com.kowx712.supermanager",

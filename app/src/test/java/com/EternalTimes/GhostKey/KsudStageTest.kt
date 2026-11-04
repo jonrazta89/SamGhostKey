@@ -46,6 +46,8 @@ class KsudStageTest {
         val s = KsudStage.SCRIPT
         // 关键元素：候选包名、pm path、两路提取、KSUD_STAGE 标记
         assertTrue(s.contains("me.weishu.kernelsu"))
+        // SuKiSu Ultra 家族（复用设备已装管理器，不内置产物）
+        assertTrue(s.contains("com.sukisu.ultra"))
         assertTrue(s.contains("pm path"))
         assertTrue(s.contains("lib/arm64/libksud.so"))
         assertTrue(s.contains("lib/arm64-v8a/libksud.so"))

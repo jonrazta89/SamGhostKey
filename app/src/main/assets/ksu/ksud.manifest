@@ -1,0 +1,20 @@
+{
+  "_comment": "内置 assets/ksu/ksud 的版本清单。由 tool/check_ksud.py 校验；换二进制后用 `python3 tool/check_ksud.py --emit` 重新生成 sha256/size 并同步本文件。字段值以仓库实测为准，勿凭空填写。",
+  "artifact": "assets/ksu/ksud",
+  "fork": "KernelSU (upstream tiann)",
+  "version": "3.3.1",
+  "version_code": 32680,
+  "abi": "arm64-v8a",
+  "size_bytes": 6402736,
+  "sha256": "049491e2b4cc0a6c913d3920cb90b8c94c9e8ca96c0ee92818293304973bfb1b",
+  "provenance": "KernelSU v3.3.1 userspace/ksud 构建，内嵌多套 KMI 的 kernelsu.ko；late-load 时按 --kmi 选内置对应 ko。来源参考 .workbuddy/upstream/*.rs（v3.3.1 源码快照）。",
+  "kernel_profiles_kmi": [
+    "android13-8",
+    "android14-11",
+    "android15-8",
+    "android16-6",
+    "android17-5"
+  ],
+  "_kmi_note": "kernel_profiles_kmi 取自 assets/kernel_profiles/ 现有 profile 覆盖的 KMI（App 支持面），非 ksud 内嵌 ko 的完整清单；内嵌 ko 集在打包时冻结，仓库未逐项枚举。跟随新 KMI 的正路是复用设备已装管理器里的 ksud（见 KsudStage）。",
+  "sync_policy": "内置优先候选 + 复用设备管理器 libksud.so；更新内置产物 = 用对应 fork 重新构建 ksud（内嵌目标 KMI 的 .ko），替换二进制后运行 check_ksud.py --emit 更新本清单。"
+}
