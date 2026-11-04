@@ -109,6 +109,12 @@ android {
         }
     }
 
+    // AGP 9.6 预览版新增的 generate<Variant>ComposePreviewRunfiles 在配置期建任务，
+    // 要求单测包含 Android 资源（否则 IDE Gradle 同步直接失败）；打开后纯 JVM 单测不受影响
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
