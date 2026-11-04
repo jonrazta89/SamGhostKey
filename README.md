@@ -8,17 +8,6 @@
 
 ---
 
-## 下载
-
-| 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
-|---|---|---|---|
-| 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
-| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha07** | [v2.2.0-alpha07](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha07) | [GhostKey-2.2.0-alpha07-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha07/GhostKey-2.2.0-alpha07-arm64-v8a-release.apk) |
-
-> 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
-
----
-
 ## 反馈与适配请求
 
 遇到问题（提权失败、崩溃、异常重启等）或希望适配新的内核 / 机型，请到 [GitHub Issues](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/issues) 提交，并**优先附上内核信息**——profile 以内核 `uname -r` 精确匹配，这是定位问题的第一依据。
@@ -29,6 +18,17 @@
 2. **运行日志**：设置页「查看运行记录」导出，或设备上 `/data/local/tmp/cve98260-app/` 下的日志文件。
 3. 机型与 Android 版本、复现步骤、所用 App 版本（界面底部 `v<版本> · <commit>`）。
 4. 涉及崩溃 / 异常重启时，可运行 `tool/collect_reboot_evidence.sh` 采集 pstore / dropbox / crash buffer / avc 等证据一并附上，便于定位。
+
+---
+
+## 下载
+
+| 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
+|---|---|---|---|
+| 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
+| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha07** | [v2.2.0-alpha07](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha07) | [GhostKey-2.2.0-alpha07-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha07/GhostKey-2.2.0-alpha07-arm64-v8a-release.apk) |
+
+> 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
 
 ---
 
@@ -124,19 +124,6 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
 ## 版本约定
 
 正式版产物命名 `GhostKey-<ver>-arm64-v8a-release.apk`，构建后复制到仓库根 `release/`（已被 `.gitignore` 忽略，不进版本库），并以 **GitHub Release 附件**形式发布。
-
----
-
-## 反馈与适配请求
-
-遇到问题（提权失败、崩溃、异常重启等）或希望适配新的内核 / 机型，请到 [GitHub Issues](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/issues) 提交，并**优先附上内核信息**——profile 以内核 `uname -r` 精确匹配，这是定位问题的第一依据。
-
-请尽量包含：
-
-1. **内核版本 `uname -r`**（最优先，如 `6.18.21-android17-...`）。
-2. **运行日志**：设置页「查看运行记录」导出，或设备上 `/data/local/tmp/cve98260-app/` 下的日志文件。
-3. 机型与 Android 版本、复现步骤、所用 App 版本（界面底部 `v<版本> · <commit>`）。
-4. 涉及崩溃 / 异常重启时，尽量一并附上内核崩溃现场（pstore / dropbox / `dmesg` / avc 日志），便于定位。
 
 ---
 
