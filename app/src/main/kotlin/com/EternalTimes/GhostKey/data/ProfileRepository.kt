@@ -20,8 +20,6 @@ class ProfileRepository(context: Context) {
 
     val importer: ProfileImportManager = ProfileImportManager(store)
 
-    fun builtinProfiles(): List<KernelProfile> = builtin.all()
-
     fun storedProfiles(): List<StoredProfile> = store.list()
 
     fun deleteStored(fileName: String): Boolean = store.delete(fileName)
