@@ -8,6 +8,17 @@
 
 ---
 
+## 下载
+
+| 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
+|---|---|---|---|
+| 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
+| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha01** | [v2.2.0-alpha01](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha01) | [GhostKey-2.2.0-alpha01-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha01/GhostKey-2.2.0-alpha01-arm64-v8a-release.apk) |
+
+> 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
+
+---
+
 ## 反馈与适配请求
 
 遇到问题（提权失败、崩溃、异常重启等）或希望适配新的内核 / 机型，请到 [GitHub Issues](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/issues) 提交，并**优先附上内核信息**——profile 以内核 `uname -r` 精确匹配，这是定位问题的第一依据。
