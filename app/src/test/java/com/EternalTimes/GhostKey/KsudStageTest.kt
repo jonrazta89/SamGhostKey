@@ -3,6 +3,7 @@ package com.EternalTimes.GhostKey
 import com.EternalTimes.GhostKey.ksu.KsudStage
 import com.EternalTimes.GhostKey.ksu.KsudStage.Outcome
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,5 +56,45 @@ class KsudStageTest {
         assertTrue(s.contains("KSUD_STAGE_FAIL"))
         // 目标路径与常量一致
         assertTrue(s.contains("T=${KsudStage.TARGET}"))
+    }
+
+    @Test
+    fun `脚本覆盖混淆改名 fork`() {
+        val s = KsudStage.SCRIPT
+        // SukiSU Ultra 在候选包名里，且脚本按内容签名兜底挑随机改名的 ksud
+        assertTrue(s.contains("com.sukisu.ultra"))
+        assertTrue(s.contains("late-load"))
+        assertTrue(s.contains("kernelsu"))
+    }
+
+    @Test
+    fun `ksud 签名识别`() {
+        // 造一个大 ELF 头 + late-load / kernelsu 语义串（模拟 SukiSU 随机改名产物）
+        val ksud = ByteArray(600 * 1024)
+        ksud[0] = 0x7f
+        ksud[1] = 'E'.code.toByte()
+        ksud[2] = 'L'.code.toByte()
+        ksud[3] = 'F'.code.toByte()
+        "late-load".toByteArray().copyInto(ksud, 64)
+        "kernelsu".toByteArray().copyInto(ksud, 128)
+        assertTrue(KsudStage.containsKsudSignature(ksud))
+    }
+
+    @Test
+    fun `ksud 签名拒绝非 ksud`() {
+        val big = ByteArray(600 * 1024)
+        big[0] = 0x7f
+        big[1] = 'E'.code.toByte()
+        big[2] = 'L'.code.toByte()
+        big[3] = 'F'.code.toByte()
+        // ELF 但没有 ksud 语义串
+        assertFalse(KsudStage.containsKsudSignature(big))
+        // 有语义串但不是 ELF
+        val notElf = ByteArray(600 * 1024)
+        "late-load".toByteArray().copyInto(notElf, 64)
+        "kernelsu".toByteArray().copyInto(notElf, 128)
+        assertFalse(KsudStage.containsKsudSignature(notElf))
+        // 体积不足下限
+        assertFalse(KsudStage.containsKsudSignature(ByteArray(1024)))
     }
 }

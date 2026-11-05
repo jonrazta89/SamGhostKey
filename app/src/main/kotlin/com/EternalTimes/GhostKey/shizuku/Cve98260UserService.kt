@@ -1202,7 +1202,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                 callback?.onLog("<s> warn: manager lib found [$pkg] but staging failed; trying script")
             }
         } else {
-            callback?.onLog("<s> no manager with libksud.so found via PackageManager; trying script")
+            callback?.onLog("<s> no manager with ksud found via PackageManager (incl. obfuscated forks); trying script")
         }
 
         val scriptOutcome = runCatching {

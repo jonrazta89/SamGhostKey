@@ -17,9 +17,10 @@ sealed class KsuSource {
 /**
  * KSU 管理器解析器（Kotlin 层，best-effort）。
  *
- * v1.0.9 起与 [KsudStage] 对齐：扫描设备上已安装的管理器时**认 libksud.so
- * 文件存在、不认包名**——自编译 fork（如「自签改」KernelSU）包名不可预知，
- * 逐包名探测会漏（1.0.8 真机教训）。
+ * v1.0.9 起与 [KsudStage] 对齐：扫描设备上已安装的管理器时**认 ksud 内容签名**
+ * （ELF + late-load/kernelsu），既兼容常规名 libksud.so，也覆盖混淆 fork（如
+ * SukiSU Ultra）的**随机改名**；不认包名——自编译 fork 包名不可预知，逐包名
+ * 探测会漏（1.0.8 真机教训）。
  *
  * 该检测结果同时就是执行路径：提权时优先把命中的管理器 libksud.so 提取为
  * ksud（经 CVE98260_KSUD 环境变量传给原生 find_ksud，第一优先候选），

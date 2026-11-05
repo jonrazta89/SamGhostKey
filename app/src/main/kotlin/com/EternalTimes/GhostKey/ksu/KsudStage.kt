@@ -38,37 +38,79 @@ object KsudStage {
         "com.kowx712.supermanager",
     )
 
-    /** 管理器 APK 内 ksud 的伪装文件名。 */
+    /** 管理器 APK 内 ksud 的常规伪装文件名（KernelSU / Next 等）。 */
     private const val LIB_NAME = "libksud.so"
 
     /**
-     * 【主路径】PackageManager 扫描已装应用找 libksud.so（v1.0.9 起）。
+     * ksud 体积下限：真 ksud 是内嵌多套 .ko 的大 ELF（~5–6.5 MB），远大于普通
+     * JNI 库。用它过滤全量扫描里的无关小 .so，避免逐个读大文件。
+     */
+    private const val KSUD_MIN_SIZE = 512L * 1024
+
+    /**
+     * 纯函数：给定字节判断是否 ksud —— ELF 魔数 + 带 late-load / kernelsu 语义串。
      *
-     * 认「文件存在」不认「包名」——自编译 fork（如 自签改 KernelSU v3.3.1，
-     * versionCode 32704-6 风格）包名不可预知，逐包名探测会漏。
+     * 用于识别**随机改名**的混淆 fork：如 SukiSU Ultra（com.sukisu.ultra）把 ksud
+     * 打成 `libtqqfthevwb.so`，常规名 libksud.so 在设备上根本不存在，只按文件名找必漏。
+     */
+    fun containsKsudSignature(bytes: ByteArray): Boolean {
+        if (bytes.size < KSUD_MIN_SIZE) return false
+        // ELF 魔数：0x7f 'E' 'L' 'F'
+        if (bytes[0] != 0x7f.toByte() || bytes[1] != 'E'.code.toByte() ||
+            bytes[2] != 'L'.code.toByte() || bytes[3] != 'F'.code.toByte()
+        ) return false
+        // ISO_8859_1 保证字节→字符 1:1，可安全做 ASCII 子串检索
+        val s = String(bytes, Charsets.ISO_8859_1)
+        return s.contains("late-load") && s.contains("kernelsu", ignoreCase = true)
+    }
+
+    /** nativeLibraryDir 下定位 ksud：先常规名，再按内容扫（覆盖混淆改名）。 */
+    private fun findKsudInDir(dir: java.io.File): java.io.File? {
+        if (!dir.isDirectory) return null
+        val named = java.io.File(dir, LIB_NAME)
+        if (named.isFile && isKsudFile(named)) return named
+        val sos = runCatching {
+            dir.listFiles { f: java.io.File ->
+                f.isFile && f.name.endsWith(".so") && f.length() >= KSUD_MIN_SIZE
+            }
+        }.getOrNull() ?: return null
+        // ksud 通常是目录里最大的 .so，从大到小试，尽早命中、少读文件
+        return sos.sortedByDescending { it.length() }.firstOrNull { isKsudFile(it) }
+    }
+
+    private fun isKsudFile(f: java.io.File): Boolean = runCatching {
+        f.length() >= KSUD_MIN_SIZE && containsKsudSignature(f.readBytes())
+    }.getOrDefault(false)
+
+    /**
+     * 【主路径】PackageManager 扫描已装应用找 ksud（v1.0.9 起）。
+     *
+     * 认「内容」不认「文件名/包名」——自编译 fork 包名不可预知，混淆 fork
+     * （SukiSU Ultra 等）还会把 ksud 随机改名，故既不能只按包名、也不能只按
+     * libksud.so 文件名找。
      *
      * 顺序：
      *  1. 已知家族包名逐个查（nativeLibraryDir 直读，最快最准）；
-     *  2. 全量扫描 getInstalledPackages，找任何带 libksud.so 的应用
+     *  2. 全量扫描 getInstalledPackages，找 nativeLibraryDir 内含 ksud 的应用
      *     （需 QUERY_ALL_PACKAGES，manifest 已声明；shell uid 下 PM 调用亦可用）。
      *
-     * 返回 (libksud.so 文件, 来源包名)；找不到返回 null。
+     * 返回 (ksud 文件, 来源包名)；找不到返回 null。
      */
     fun scanManagerLib(
         pm: android.content.pm.PackageManager,
     ): Pair<java.io.File, String>? {
         for (pkg in MANAGER_PACKAGES) {
-            val lib = runCatching {
-                val info = pm.getApplicationInfo(pkg, 0)
-                java.io.File(info.nativeLibraryDir, LIB_NAME)
-            }.getOrNull()
-            if (lib != null && lib.isFile) return lib to pkg
+            val dir = runCatching {
+                java.io.File(pm.getApplicationInfo(pkg, 0).nativeLibraryDir)
+            }.getOrNull() ?: continue
+            val lib = findKsudInDir(dir)
+            if (lib != null) return lib to pkg
         }
         val infos = runCatching { pm.getInstalledPackages(0) }.getOrDefault(emptyList())
         for (info in infos) {
-            val dir = info.applicationInfo?.nativeLibraryDir ?: continue
-            val lib = java.io.File(dir, LIB_NAME)
-            if (lib.isFile) return lib to info.packageName
+            val dirS = info.applicationInfo?.nativeLibraryDir ?: continue
+            val lib = findKsudInDir(java.io.File(dirS))
+            if (lib != null) return lib to info.packageName
         }
         return null
     }
@@ -79,8 +121,10 @@ object KsudStage {
      * 流程：
      *  1. 逐个候选包名 `pm path` 找已装管理器 APK；
      *  2. 优先直接拷 `<apk目录>/lib/arm64/libksud.so`（已解压的 native lib，最快）；
-     *  3. 回退 `unzip -p <apk> lib/arm64-v8a/libksud.so`（部分 ROM 未解压时）；
-     *  4. chmod 755 后回报 `KSUD_STAGE_OK md5=.. size=..`，失败回报
+     *  3. 常规名不存在时（混淆 fork，如 SukiSU Ultra 随机改名），扫 lib/arm64 目录下的 .so
+     *     按内容签名挑出 ksud；
+     *  4. 回退 `unzip -p <apk> lib/arm64-v8a/libksud.so`（部分 ROM 未解压时）；
+     *  5. chmod 755 后回报 `KSUD_STAGE_OK md5=.. size=..`，失败回报
      *     `KSUD_STAGE_FAIL <reason>`，两标记供宿主解析（改名需同步 parser）。
      */
     val SCRIPT: String = """
@@ -93,6 +137,14 @@ object KsudStage {
         if [ -z "${'$'}APK" ]; then echo "KSUD_STAGE_FAIL manager_not_installed"; exit 0; fi
         LIB="${'$'}(dirname "${'$'}APK")/lib/arm64/libksud.so"
         if [ -r "${'$'}LIB" ]; then cp -f "${'$'}LIB" "${'$'}T" 2>/dev/null; fi
+        if [ ! -s "${'$'}T" ]; then
+          for L in "${'$'}(dirname "${'$'}APK")/lib/arm64"/*.so; do
+            [ -r "${'$'}L" ] || continue
+            if grep -q late-load "${'$'}L" 2>/dev/null && grep -q -i kernelsu "${'$'}L" 2>/dev/null; then
+              cp -f "${'$'}L" "${'$'}T" 2>/dev/null; break
+            fi
+          done
+        fi
         if [ ! -s "${'$'}T" ]; then
           if command -v unzip >/dev/null 2>&1; then
             unzip -p "${'$'}APK" lib/arm64-v8a/libksud.so > "${'$'}T" 2>/dev/null
