@@ -17,6 +17,7 @@
         <package android:name="me.weishu.kernelsu" />
         <package android:name="com.rifsxd.ksunext" />
         <package android:name="me.weishu.kernelsu.next" />
+        <package android:name="com.sukisu.ultra" />
         <package android:name="com.topjohnwu.magisk" />
         <package android:name="io.github.vvb2060.magisk" />
         <package android:name="me.bmax.apatch" />
