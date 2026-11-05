@@ -42,6 +42,34 @@ class KsuResolver(private val context: Context) {
         return KsuSource.DeviceManager(pkg, version)
     }
 
+    /**
+     * 枚举设备上所有携带 ksud 的管理器（v2.2.0 多管理器选择）。
+     *
+     * 供 UI 在检出多个管理器时列出候选让用户挑选；接管与 [detect] 一致，
+     * 认内容签名不认包名。无命中时返回空列表（= 只有内置 ksud 可用）。
+     */
+    fun detectAll(): List<KsuSource.DeviceManager> {
+        val pm = context.packageManager
+        return KsudStage.scanManagerLibs(pm).mapNotNull { (file, pkg) ->
+            if (!file.isFile || file.length() <= 0L) return@mapNotNull null
+            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+            KsuSource.DeviceManager(pkg, version)
+        }
+    }
+
+    /**
+     * 按用户选定包名解析来源；[selected] 为空或该包名无 ksud 时，回落到 [detect]。
+     */
+    fun detect(selected: String?): KsuSource {
+        if (selected.isNullOrBlank()) return detect()
+        val pm = context.packageManager
+        val lib = KsudStage.scanManagerLibFor(pm, selected) ?: return detect()
+        val (file, pkg) = lib
+        if (!file.isFile || file.length() <= 0L) return KsuSource.Bundled()
+        val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+        return KsuSource.DeviceManager(pkg, version)
+    }
+
     fun label(source: KsuSource): String = when (source) {
         is KsuSource.DeviceManager ->
             "设备管理器 ${source.packageName}" + (source.versionName?.let { " v$it" } ?: "")

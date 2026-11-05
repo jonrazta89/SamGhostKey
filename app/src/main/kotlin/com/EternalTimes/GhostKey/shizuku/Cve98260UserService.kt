@@ -45,6 +45,9 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     /** 本轮 rootd 的 stop 文件路径（每轮唯一，经 PC98260_STOP_FILE 传给原生体） */
     @Volatile private var stopFilePath: String = File(WORK_DIR, "rootd.stop").absolutePath
 
+    /** 用户选定的 Root 管理器包名（多管理器场景，经 [setManagerPackage] 传入；null=自动）。 */
+    @Volatile private var selectedManager: String? = null
+
     companion object {
         private const val TAG = "Cve98260UserService"
         private const val STATUS_MARKER = NativeContract.STATUS_MARKER
@@ -1167,15 +1170,18 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
      */
     private fun resolveKsud(workDir: File, callback: ICve98260Callback?): File? {
         //
-        // 内置 ksud **永远**先解压，并且是**首选候选**：
-        //   6402736 B，sha256 049491e2b4cc0a6c...，版本串 32680 / 3.3.1
-        //   —— 与设备上那个 KSU 管理器 v3.3.1 (32680-5) **同版本**，late-load
-        //   才加载得动（2026-10-31 真机：late-load 成功、模块注册成功）。
+        // 候选优先级（v2.2.0 修正）：**优先用设备管理器自带的 ksud**，内置
+        // assets/ksu/ksud（stock KernelSU 3.3.1）退居其后作自动兜底。
+        //   · 接管 late-load 装进内核的是「这个 ksud 里内嵌的模块」；要装成与
+        //     设备上已装管理器**同源**的模块，管理器才认得出提权状态、并在未授权
+        //     uid execve su 时弹授权框。SukiSU Ultra / KernelSU Next 等 fork 与
+        //     stock KernelSU 的 superkey/模块 ABI 不兼容——旧实现固定首选内置
+        //     stock 模块，导致「SukiSU 不识别 root、也不弹窗」（见 issue #2/#4）。
+        //   · 内置 ksud 仍被解压到 workDir/ksud，作为原生 find_ksud 候选阶梯的
+        //     #2：万一某个管理器里是只认 -h/-V 的陈旧 ksud（2026-10-31 真机教训：
+        //     「模块加载了但没有 su」），late-load 空转后会自动回落到内置那个。
         //
-        // 2026-10-31 真机教训：管理器里的 libksud.so（4990848 B）是个只认
-        // -h/-V 的陈旧构建，late-load 只会打印一段帮助后退出 —— 拿它当首选就
-        // 会得到「模块加载了但没有 su」。它仍会被暂存到 /data/local/tmp/ksud，
-        // 作为原生候选阶梯里的**兜底**。
+        // 多管理器（#3）：装了多个时优先取用户经 setManagerPackage 选定的包名。
         //
         val bundled = extractKsud(workDir)
         if (bundled != null) {
@@ -1184,7 +1190,14 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             )
         }
         var staged: File? = null
-        val scanned = runCatching { KsudStage.scanManagerLib(context.packageManager) }.getOrNull()
+        val pm = context.packageManager
+        val scanned = runCatching {
+            val sel = selectedManager
+            if (!sel.isNullOrBlank())
+                KsudStage.scanManagerLibFor(pm, sel) ?: KsudStage.scanManagerLib(pm)
+            else
+                KsudStage.scanManagerLib(pm)
+        }.getOrNull()
         if (scanned != null) {
             val (lib, pkg) = scanned
             staged = runCatching {
@@ -1195,7 +1208,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             }.getOrNull()
             if (staged != null && staged.length() > 0L) {
                 callback?.onLog(
-                    "<s> manager ksud staged as fallback candidate [$pkg]: ${staged.absolutePath} " +
+                    "<s> manager ksud staged as primary candidate [$pkg]: ${staged.absolutePath} " +
                         "(size=${staged.length()})",
                 )
             } else {
@@ -1237,7 +1250,9 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
         }
 
-        return bundled ?: staged
+        // #2/#4：优先返回设备管理器的 ksud（让加载的模块与已装管理器同源），
+        // 内置 stock-KSU ksud 作自动兜底（原生 find_ksud 仍把它列为 #2 候选）。
+        return staged ?: bundled
     }
 
     /** 从 assets/ksu/ksud 解压可执行文件；不存在返回 null。 */
@@ -1349,6 +1364,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         }
     }
 
+
+    override fun setManagerPackage(pkg: String?) {
+        selectedManager = pkg?.trim()?.takeIf { it.isNotEmpty() }
+        Log.i(TAG, "selected manager package: ${selectedManager ?: "<auto>"}")
+    }
 
     override fun getKernelRelease(): String =
         runCatching { System.getProperty("os.version") ?: "unknown" }.getOrDefault("unknown")

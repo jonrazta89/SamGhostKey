@@ -98,21 +98,61 @@ object KsudStage {
      */
     fun scanManagerLib(
         pm: android.content.pm.PackageManager,
-    ): Pair<java.io.File, String>? {
+    ): Pair<java.io.File, String>? = scanManagerLibs(pm).firstOrNull()
+
+    /**
+     * 已知家族包名（供 UI 展示与优先排序）。
+     */
+    val managerPackages: List<String> get() = MANAGER_PACKAGES
+
+    /**
+     * 【枚举全部】扫描设备上所有携带 ksud 的管理器（v2.2.0 多管理器选择）。
+     *
+     * 与 [scanManagerLib] 同源，但**不命中即返回**——真机上可能同时装了
+     * KernelSU 与 SukiSU 两个管理器，只取第一个就无法让用户挑选要接管哪一个
+     * （接管需加载与管理器同源的 ksud，见 [KsuResolver]）。返回顺序：
+     *  1. 已知家族包名（按 [MANAGER_PACKAGES] 优先级）；
+     *  2. 其余 getInstalledPackages 全量扫描命中；
+     * 按包名去重。
+     */
+    fun scanManagerLibs(
+        pm: android.content.pm.PackageManager,
+    ): List<Pair<java.io.File, String>> {
+        val out = ArrayList<Pair<java.io.File, String>>()
+        val seen = HashSet<String>()
         for (pkg in MANAGER_PACKAGES) {
-            val dir = runCatching {
-                java.io.File(pm.getApplicationInfo(pkg, 0).nativeLibraryDir)
-            }.getOrNull() ?: continue
-            val lib = findKsudInDir(dir)
-            if (lib != null) return lib to pkg
+            val lib = findKsudForPackage(pm, pkg) ?: continue
+            if (seen.add(pkg)) out.add(lib to pkg)
         }
         val infos = runCatching { pm.getInstalledPackages(0) }.getOrDefault(emptyList())
         for (info in infos) {
+            val pkg = info.packageName
+            if (pkg in seen) continue
             val dirS = info.applicationInfo?.nativeLibraryDir ?: continue
-            val lib = findKsudInDir(java.io.File(dirS))
-            if (lib != null) return lib to info.packageName
+            val lib = findKsudInDir(java.io.File(dirS)) ?: continue
+            if (seen.add(pkg)) out.add(lib to pkg)
         }
-        return null
+        return out
+    }
+
+    /** 指定包名的管理器 APK 里定位 ksud；未安装/未命中返回 null。 */
+    fun scanManagerLibFor(
+        pm: android.content.pm.PackageManager,
+        pkg: String,
+    ): Pair<java.io.File, String>? {
+        val lib = findKsudForPackage(pm, pkg) ?: return null
+        return lib to pkg
+    }
+
+    /** 在某个包名的 nativeLibraryDir 下找 ksud。 */
+    private fun findKsudForPackage(
+        pm: android.content.pm.PackageManager,
+        pkg: String,
+    ): java.io.File? {
+        val dir = runCatching {
+            java.io.File(pm.getApplicationInfo(pkg, 0).nativeLibraryDir)
+        }.getOrNull() ?: return null
+        return findKsudInDir(dir)
     }
 
     /**
