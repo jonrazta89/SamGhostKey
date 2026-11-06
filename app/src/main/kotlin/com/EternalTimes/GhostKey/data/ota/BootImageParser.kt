@@ -91,6 +91,14 @@ class BootImageParser {
         val kItimerLayout: StructLayout? = null,
         /** `struct cpu_timer` 布局：node 成员在 cpu_timer 内的偏移。 */
         val cpuTimerLayout: StructLayout? = null,
+        /**
+         * 镜像内实测的分配调用点（链接期地址，未加 slide）。
+         *
+         * kmem_cache_alloc tracepoint 记的 call_site 是 BL 的下一条指令，
+         * 不是函数入口 —— 这个函数内偏移随内核构建而变，只能实测
+         * （见 [AllocCallSiteResolver]）。
+         */
+        val allocCallSites: Map<String, Long> = emptyMap(),
     )
 
     data class StructOffsets(
@@ -150,11 +158,13 @@ class BootImageParser {
         var symbols: Map<String, Long>? = null
         var symbolCount = 0
         var imageBase = DEFAULT_IMAGE_BASE
+        var allocCallSites: Map<String, Long> = emptyMap()
         try {
             val ks = KallsymsExtractor.extract(image)
             symbols = ks.symbols
             symbolCount = ks.numSyms
             imageBase = ks.imageBase
+            allocCallSites = AllocCallSiteResolver.resolve(image, ks.symbols, ks.imageBase)
         } catch (e: Exception) {
             notes += "kallsyms 提取失败: ${e.message}"
         }
@@ -172,6 +182,7 @@ class BootImageParser {
             credLayout = credLayout,
             kItimerLayout = kItimerLayout,
             cpuTimerLayout = cpuTimerLayout,
+            allocCallSites = allocCallSites,
         )
     }
 

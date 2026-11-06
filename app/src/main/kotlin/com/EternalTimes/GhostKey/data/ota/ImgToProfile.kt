@@ -8,8 +8,9 @@ import com.EternalTimes.GhostKey.data.ProfileDocument
  * 字段来源（与 PC 端 make.py / offsets.h 的产出对齐，已用 PKJ110_F27 真值回归）：
  *   - BTF（boot.img 即可）：task_cred / task_struct_size / cred_uid
  *   - kallsyms（boot.img 解压后的内核镜像即可，见 [KallsymsExtractor]）：
- *       timer_link   = do_timer_create + 0xa8（make.py:189）
- *       cred_link    = prepare_creds  + 0x24（make.py:190）
+ *       timer_link   = do_timer_create 内 kmem_cache_alloc 的返回地址（实测）
+ *       cred_link    = prepare_creds  内 kmem_cache_alloc 的返回地址（实测）
+ *       task_alloc_link = task_struct slab 分配点的返回地址（实测）
  *       selinux_link = selinux_state
  *       user_ns      = init_user_ns
  *       root_user    = root_user
@@ -108,16 +109,27 @@ object ImgToProfile {
 
         val syms = info.symbols
         if (syms != null) {
-            syms["do_timer_create"]?.let { offset["timer_link"] = it + TIMER_LINK_INNER_OFFSET }
-            syms["prepare_creds"]?.let { offset["cred_link"] = it + CRED_LINK_INNER_OFFSET }
+            // 分配调用点：优先用镜像实测值（这个函数内偏移每个内核构建都不同）。
+            val sites = info.allocCallSites
+            sites[AllocCallSiteResolver.KEY_TIMER]?.let { offset["timer_link"] = it }
+            sites[AllocCallSiteResolver.KEY_CRED]?.let { offset["cred_link"] = it }
+            sites[AllocCallSiteResolver.KEY_TASK]?.let { offset["task_alloc_link"] = it }
+            if (sites[AllocCallSiteResolver.KEY_TIMER] == null && release.startsWith("6.6.")) {
+                // 兜底：解析器失败时，只有 6.6 系敢用写死偏移
+                // （6.6.118 上标定：do_timer_create+0xa8 / prepare_creds+0x24）。
+                syms["do_timer_create"]?.let { offset["timer_link"] = it + TIMER_LINK_INNER_OFFSET }
+                syms["prepare_creds"]?.let { offset["cred_link"] = it + CRED_LINK_INNER_OFFSET }
+                if (offset["task_alloc_link"] == null) {
+                    syms["copy_process"]?.let { offset["task_alloc_link"] = it + TASK_ALLOC_INNER_OFFSET }
+                }
+            }
+            // 其它内核解析不出调用点时宁可不写（导入按缺字段报错），
+            // 也不写一个必定匹配不上的错偏移。
             syms["selinux_state"]?.let { offset["selinux_link"] = it }
             syms["init_user_ns"]?.let { offset["user_ns"] = it }
             syms["root_user"]?.let { offset["root_user"] = it }
             syms["init_groups"]?.let { offset["groups"] = it }
             syms["init_ucounts"]?.let { offset["ucounts"] = it }
-            if (release.startsWith("6.6.")) {
-                syms["copy_process"]?.let { offset["task_alloc_link"] = it + TASK_ALLOC_INNER_OFFSET }
-            }
         }
 
         // kitimer_node = k_itimer.it 的偏移 + cpu_timer.node 的偏移（6.18=0xe0，6.6=0x78）

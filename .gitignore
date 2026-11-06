@@ -29,6 +29,7 @@ release/
 
 # 工具运行时目录（不纳入版本库）
 .workbuddy/
+__pycache__/
 
 # Gradle Kotlin 构建缓存
 .kotlin/

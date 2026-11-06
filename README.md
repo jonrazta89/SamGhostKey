@@ -101,6 +101,8 @@
 
 内置 profile 覆盖 5.15 / 6.1 / 6.6 / 6.12 / 6.18 系列内核。已验证机型：OPPO Find X8 Ultra（`6.6.118-android15-...`）、小米 18 Pro Max（代号 **madrid** / SM8975 / `6.18.21-android17-...`）。以内核 `uname -r` **精确**匹配为准；机型配置（`app/src/main/assets/device_profiles/`）只是加速层，缺失不影响能否跑通。
 
+已内置、待真机回归：POCO M7（代号 **creek** / HyperOS 3.0.304.0.WBOMIXM / `5.15.194-android13-8-00019-gf4321180a397-ab15212794`）。
+
 给新设备生成 profile（离线、纯标准库、不需 root）：
 
 ```bash
@@ -108,6 +110,8 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
     --profile-json <release>.json --kallsyms kallsyms.txt \
     --page-offset -549755813888
 ```
+
+工具从镜像实测三件事，不靠人工填偏移：链接期基址与 `_text` 所在的文件偏移（PE 容器与裸 arm64 Image 不同）、`kmem_cache_alloc` 的调用点（`timer_link` / `cred_link` / `task_alloc_link` 写的是 **BL 的下一条指令**，即 tracepoint 记的 `_RET_IP_`，不是函数基址）、以及 BTF 里的结构体布局。App 端的「导入 boot.img」走同一套算法（`AllocCallSiteResolver`）。
 
 ---
 
