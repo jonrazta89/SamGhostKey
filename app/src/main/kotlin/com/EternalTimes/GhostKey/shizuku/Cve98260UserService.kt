@@ -1176,12 +1176,12 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         //     设备上已装管理器**同源**的模块，管理器才认得出提权状态、并在未授权
         //     uid execve su 时弹授权框。SukiSU Ultra / KernelSU Next 等 fork 与
         //     stock KernelSU 的 superkey/模块 ABI 不兼容——旧实现固定首选内置
-        //     stock 模块，导致「SukiSU 不识别 root、也不弹窗」（见 issue #2/#4）。
+        //     stock 模块，导致「SukiSU 不识别 root、也不弹窗」（此前那两项诉求）。
         //   · 内置 ksud 仍被解压到 workDir/ksud，作为原生 find_ksud 候选阶梯的
-        //     #2：万一某个管理器里是只认 -h/-V 的陈旧 ksud（2026-10-31 真机教训：
+        //     原生 find_ksud 候选阶梯第 2 位：万一某个管理器里是只认 -h/-V 的陈旧 ksud（2026-10-31 真机教训：
         //     「模块加载了但没有 su」），late-load 空转后会自动回落到内置那个。
         //
-        // 多管理器（#3）：装了多个时优先取用户经 setManagerPackage 选定的包名。
+        // 多管理器：装了多个时优先取用户经 setManagerPackage 选定的包名。
         //
         val bundled = extractKsud(workDir)
         if (bundled != null) {
@@ -1250,8 +1250,8 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
         }
 
-        // #2/#4：优先返回设备管理器的 ksud（让加载的模块与已装管理器同源），
-        // 内置 stock-KSU ksud 作自动兜底（原生 find_ksud 仍把它列为 #2 候选）。
+        // 优先返回设备管理器的 ksud（让加载的模块与已装管理器同源），
+        // 内置 stock-KSU ksud 作自动兜底（原生 find_ksud 仍把它列为第 2 候选）。
         return staged ?: bundled
     }
 

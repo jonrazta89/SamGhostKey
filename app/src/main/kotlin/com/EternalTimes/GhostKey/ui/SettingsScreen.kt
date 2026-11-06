@@ -369,7 +369,7 @@ private fun ProfilePickerDialog(
     )
 }
 
-/** 多管理器选择弹窗（#3）：null = 自动（优先级首个），否则按选中包名接管。 */
+/** 多管理器选择弹窗：null = 自动（优先级首个），否则按选中包名接管。 */
 @Composable
 private fun ManagerPickerDialog(
     options: List<ManagerOption>,
