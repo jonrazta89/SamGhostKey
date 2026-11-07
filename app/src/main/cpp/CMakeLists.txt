@@ -17,7 +17,6 @@ add_executable(libcve98260.so
     calib_core.c
     calib.c
     rawscan.c
-    memguard.c
     ksu.c
     ksu_script.c
 )

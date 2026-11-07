@@ -299,20 +299,6 @@ static void capture_child(const char *path, int wfd)
  * idle_ms > 0 时启用**空闲早停**：连续 idle_ms 没有新数据就认为读完了。
  * 一条都没读到时仍按老行为等到硬超时 —— 避免把「没抓到」误判成「抓完了」。
  */
-/*
- * 崩溃前的最后一步必须已经在盘上。
- *
- * calib.c 全篇用 fprintf(stdout, ...) 输出。stdout 重定向到文件时是**全缓冲**
- * 的（默认 4 KB 一块），进程被 kernel panic 带走时缓冲区内容会一起丢 ——
- * 表现就是「跑一次设备重启，日志什么都没有」。校准阶段恰恰是最容易崩的地方
- * （要往内核地址写东西），所以这里在关键节点强制 flush + fdatasync。
- */
-static void calib_sync(void)
-{
-	fflush(stdout);
-	fdatasync(STDOUT_FILENO);
-}
-
 static void capture_raw(struct raw_sink *sink, const char *const *paths,
 			int npaths, int seconds, int idle_ms, const char *label)
 {
@@ -412,7 +398,6 @@ static void capture_raw(struct raw_sink *sink, const char *const *paths,
 	fprintf(stdout, "[%s] raw capture: %zu bytes in %llu ms (idle window %d ms)\n",
 		label ? label : "calib", sink->len,
 		(unsigned long long)(now_ms() - started_ms), idle_ms);
-	calib_sync();
 
 	for (i = 0; i < n; i++) {
 		int st;
@@ -1163,11 +1148,6 @@ static void calib_a_probe_alloc_sites(const struct kernel_offsets *o,
 	} else {
 		fprintf(stderr, "[calib_a] note: task call site unresolved, exploit matches task by size only\n");
 	}
-	/*
-	 * 校准结果（slide / 各分配点 / task object_size）是后面 exploit 阶段的
-	 * 全部输入。落盘一份，避免后续崩溃时这段线索随缓冲区一起丢。
-	 */
-	calib_sync();
 }
 
 /*
@@ -1234,7 +1214,6 @@ static int calib_a_resolve_via_kallsyms(const struct kernel_offsets *o,
 		slide = tslide;
 		fprintf(stdout, "[calib_a] text trace: call_site=%s+0x%llx -> slide=%#llx\n",
 			tsym, (unsigned long long)toff, (unsigned long long)slide);
-		calib_sync();
 	} else {
 		/*
 		 * 文本候选没自洽：说明探针窗口里最先出现的那批同尺寸记录不是
@@ -1392,7 +1371,6 @@ int calib_a_main(int argc, char **argv)
 			fprintf(stdout, "[calib_a] kallsyms map: %zu symbols\n", nsyms);
 		else
 			fprintf(stderr, "[calib_a] note: no kallsyms map, fall back to legacy slide anchor\n");
-		calib_sync();
 
 		if (have_syms &&
 		    calib_a_resolve_via_kallsyms(o, syms, nsyms, text_sites, n_text,
@@ -1449,7 +1427,6 @@ int calib_a_main(int argc, char **argv)
 	fprintf(stdout, "[calib_a] slide = %#llx  _text = %#llx\n",
 		(unsigned long long)slide,
 		(unsigned long long)(UINT64_C(0xFFFFFFC080000000) + slide));
-	calib_sync();
 	{
 		char buf[64];
 		snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long)slide);

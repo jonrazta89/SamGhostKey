@@ -60,55 +60,10 @@ static const char *root_stop_file(void)
 	return "/data/local/tmp/cve98260-app/rootd.stop";
 }
 
-/*
- * 停止检测：节流 + 能力探测。
- *
- * 真机 2026-11-04 证据（bugreport dmesg）：
- *   avc:  denied { search } for comm="libcve98260.so" name="/"
- *         scontext=u:object_r:unlabeled:s0 tcontext=u:object_r:rootfs:s0
- * 每 200 ms 一条；auditd 补上下文去读 /proc/<pid> 又被拒 -> 正反馈，
- * audit_lost 每秒 +3（31652 -> 31686），审计积压长期打满。
- *
- * 根因：利用进程跑在 **unlabeled 域**（exec 的是 .so，没有域转换），
- * 对 "/" 的 search 被拒 -> 路径解析恒返回 EACCES -> stop 文件**根本读不到**，
- * 也就是说这条通道在本机型上是**死的**，却每 200 ms 贡献一条 AVC。
- *
- * 处理：
- *   1) 第一次 stat 若是 EACCES，认定该通道不可用，之后**不再 stat**；
- *   2) 可用时把检查频率从 200 ms 降到 2 s（停止延迟由 socket / SIGTERM 兜底，
- *      宿主 ROOTD_STOP 超时是 30 s，2 s 绰绰有余）。
- */
 static int stop_file_present(void)
 {
-	static int usable = -1;
-	static uint64_t next_check_ms;
 	struct stat st;
-	struct timespec ts;
-	uint64_t now_ms;
-
-	if (usable == 0)
-		return 0;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	now_ms = (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
-	if (usable > 0) {
-		if (now_ms < next_check_ms)
-			return 0;
-		next_check_ms = now_ms + 2000u;
-	}
-	if (stat(root_stop_file(), &st) == 0) {
-		usable = 1;
-		return 1;
-	}
-	if (errno == EACCES) {
-		/* unlabeled 域：这条路走不通，直接放弃该通道，别再制造 AVC。 */
-		usable = 0;
-		dprintf(STDERR_FILENO,
-			"[rootd] stop file unreachable (EACCES, unlabeled domain); "
-			"relying on socket/SIGTERM\n");
-		return 0;
-	}
-	usable = 1;
-	return 0;
+	return stat(root_stop_file(), &st) == 0;
 }
 
 /* ------------------------------------------------------------------ */
