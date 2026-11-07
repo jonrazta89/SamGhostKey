@@ -13,7 +13,7 @@
 | 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
 |---|---|---|---|
 | 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
-| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha05** | [v2.2.0-alpha05](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha05) | [GhostKey-2.2.0-alpha05-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha05/GhostKey-2.2.0-alpha05-arm64-v8a-release.apk) |
+| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha06** | [v2.2.0-alpha06](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha06) | [GhostKey-2.2.0-alpha06-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha06/GhostKey-2.2.0-alpha06-arm64-v8a-release.apk) |
 
 > 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
 

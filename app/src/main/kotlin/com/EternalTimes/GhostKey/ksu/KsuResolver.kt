@@ -55,8 +55,23 @@ class KsuResolver(private val context: Context) {
             val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
             KsuSource.DeviceManager(pkg, version)
         }
-        cached = out
-        cachedAt = now
+        /*
+         * 空结果**不写缓存**。
+         *
+         * 之前无论扫没扫到都写缓存，于是「一次扫空」会把「未检测到」钉死 5 分钟
+         * （CACHE_TTL_MS）：用户刚装好管理器就点「重新检测」，界面仍然是
+         * 「未检测到」，除非等满 5 分钟或重启 APP —— 看上去就是「检测不到管理器」。
+         *
+         * 空结果本来就说明「此刻设备上还没有带 ksud 的管理器」，不是稳定结论，
+         * 缓存它没有意义；下一次调用重新扫即可（扫包只在 IO 线程发生）。
+         */
+        if (out.isNotEmpty()) {
+            cached = out
+            cachedAt = now
+        } else {
+            cached = null
+            cachedAt = 0L
+        }
         return out
     }
 

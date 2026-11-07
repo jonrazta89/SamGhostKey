@@ -32,6 +32,7 @@ class StageTracker(
 
     data class Snapshot(val states: List<StageState>, val durations: List<Long>)
 
+    @Synchronized
     fun snapshot(): Snapshot = Snapshot(states.toList(), durations.toList())
 
     /**
@@ -40,6 +41,7 @@ class StageTracker(
      * 关键：任何阶段进入新状态时，都会先把其它仍在 RUNNING 的阶段收尾，
      * 避免「上一个还在转圈、下一个已经在跑」这种双转圈。
      */
+    @Synchronized
     fun onEvent(index: Int, status: String, now: Long = clock()) {
         val i = index.coerceIn(0, count - 1)
         for (k in 0 until count) {
@@ -72,6 +74,7 @@ class StageTracker(
     }
 
     /** 流水线结束：仍在跑的按 exit 判定，没跑到的标记「跳过」（不再刷成成功）。 */
+    @Synchronized
     fun finish(exitCode: Int, now: Long = clock()) {
         progressFloor = maxOf(progressFloor, progress(now))
         val ok = exitCode == 0
@@ -88,6 +91,7 @@ class StageTracker(
     }
 
     /** 用户中断：与失败区分，未开始的记「跳过」。 */
+    @Synchronized
     fun stop(now: Long = clock()) {
         progressFloor = maxOf(progressFloor, progress(now))
         for (i in 0 until count) {
@@ -103,6 +107,7 @@ class StageTracker(
     }
 
     /** 运行中的阶段按当前时刻刷新耗时，用于让耗时数字持续增长。 */
+    @Synchronized
     fun liveDurations(now: Long = clock()): List<Long> =
         List(count) { i ->
             if (states[i] == StageState.RUNNING && startedAt[i] >= 0L) {
@@ -117,6 +122,7 @@ class StageTracker(
      * 这样「正在跑」时进度条会持续前进，而不是卡在某个百分比不动。
      * 返回值受 progressFloor 钳制，全程单调不减。
      */
+    @Synchronized
     fun progress(now: Long = clock()): Float {
         var done = 0f
         for (i in 0 until count) {
@@ -137,6 +143,7 @@ class StageTracker(
         return maxOf(p, progressFloor)
     }
 
+    @Synchronized
     fun reset() {
         for (i in 0 until count) {
             states[i] = StageState.PENDING

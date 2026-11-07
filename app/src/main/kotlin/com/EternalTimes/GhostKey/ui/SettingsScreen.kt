@@ -218,13 +218,30 @@ fun SettingsScreen(
 
             SettingsCard(title = "Root 管理器（自动适配）") {
                 val cands = uiState.managerCandidates
+                /*
+                 * 检测是异步的，首屏拿到的是「还没扫完」的中间态。
+                 * 不区分「还在查」和「查了没有」，用户会把前者读成后者，
+                 * 于是以为「检测不到管理器」。
+                 */
+                val scanning = uiState.managerScanning
                 Text(
-                    "检测到：${uiState.detectedManager.ifBlank { "未检测到" }}",
-                    color = CvePalette.TextPrimary,
+                    "检测到：" + when {
+                        scanning -> "检测中…"
+                        uiState.managerScanError.isNotBlank() -> "检测失败（${uiState.managerScanError}）"
+                        else -> uiState.detectedManager.ifBlank { "未检测到" }
+                    },
+                    color = if (uiState.managerScanError.isNotBlank() && !scanning) {
+                        CvePalette.Warning
+                    } else {
+                        CvePalette.TextPrimary
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "KSU 来源：${uiState.ksuSourceLabel.ifBlank { "内置 ksud" }}",
+                    "KSU 来源：" + when {
+                        scanning -> "检测中…"
+                        else -> uiState.ksuSourceLabel.ifBlank { "内置 ksud" }
+                    },
                     color = CvePalette.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )

@@ -1283,13 +1283,17 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         }
 
         /*
-         * PM 扫描已经拿到 ksud 时**不再跑 shell 脚本**。
+         * 只有 **PM 真的落盘了** 才跳过 shell 脚本。
          *
-         * 脚本那一路要逐个 pm path + 拷文件，最长 20 s；而 PM 扫描认的是
-         * 内容签名、且认的是用户选定的那个管理器，比脚本更准。注入阶段的
-         * 每一秒都被用户当成「提权很慢」，能省则省。
+         * 之前用的是 `scanned != null`（PM 扫到了文件）—— 但拷到
+         * KsudStage.TARGET 那一步可能失败（目录不可写、权限被拒、拷贝中断）。
+         * 那种情况下 staged 仍是 null，而脚本那一路是**唯一的救生索**：
+         * 跳过它就只剩内置 ksud（KMI 集冻结在打包时刻），装进去的模块与设备上
+         * 已装管理器不同源 → 管理器不认这个 root、也不弹授权框 → 「提权失败」。
+         *
+         * 所以判据必须是 staged != null（文件确实落到磁盘上）。
          */
-        val scriptOutcome: KsudStage.Outcome? = if (scanned != null) {
+        val scriptOutcome: KsudStage.Outcome? = if (staged != null) {
             null
         } else {
             runCatching {
@@ -1307,9 +1311,14 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             }.getOrNull()
         }
 
-        if (scanned != null) {
+        if (staged != null) {
             callback?.onLog("<s> skip ksud shell stage: PackageManager scan already located ksud")
         } else {
+            if (scanned != null) {
+                callback?.onLog(
+                    "<s> warn: manager ksud found but not staged; falling back to shell stage",
+                )
+            }
             when (scriptOutcome) {
                 is KsudStage.Outcome.Ok -> {
                     val f = File(KsudStage.TARGET)
