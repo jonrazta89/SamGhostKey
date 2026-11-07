@@ -28,57 +28,83 @@ sealed class KsuSource {
  *
  * 注意：Android 11+ 包可见性依赖 manifest 的 QUERY_ALL_PACKAGES（已声明）；
  * <queries> 中保留的已知包名仅作快速通道补充。
+ *
+ * **两条通道**（2.2.0-alpha08 起）：
+ *  - 应用侧（[scan]）：只查 PackageManager 的包存在性。ksud 在别的应用的
+ *    nativeLibraryDir 里，App 进程（untrusted_app）读它会被 SELinux 拒绝，
+ *    所以内容签名扫描在 App 进程里恒为空 —— 界面永远「未检测到管理器」。
+ *    包存在性不依赖 Shizuku，毫秒级可用。
+ *  - 服务侧（[mergeServiceScan]）：UserService 跑在 shell（uid 2000），读得到
+ *    别的应用的 ksud，由它做权威的内容签名扫描（含随机改名的混淆 fork）。
  */
 class KsuResolver(private val context: Context) {
 
-    /** 扫描结果缓存（时间戳）。同一批候选不重复全量扫包。 */
-    private var cached: List<KsuSource.DeviceManager>? = null
-    private var cachedAt = 0L
+    /** 应用侧结果（包存在性）：上次刷新的时间戳。 */
+    private var installedAt = 0L
+
+    /** 应用侧结果（包存在性）。 */
+    private var installed: List<KsuSource.DeviceManager> = emptyList()
+
+    /** 服务侧结果（shell uid 的内容签名扫描），权威。 */
+    private var service: List<KsuSource.DeviceManager> = emptyList()
 
     /**
-     * 扫描设备上所有携带 ksud 的管理器（**只扫一次**，检测与选择共用）。
+     * 扫描设备上已安装的 Root 管理器（**应用侧通道**：包存在性）。
      *
      * [force] = true 时忽略缓存（设置页的「重新检测」按钮）。
      *
-     * 为什么要缓存：全量扫包要枚举已装应用、逐个看 nativeLibraryDir、再按内容
-     * 签名验证候选 .so —— 在真机上是几百毫秒到几秒的 IO。原来 ViewModel 一次
-     * 启动里会做**两轮**（detect + detectAll），而且在主线程上做。
+     * 为什么应用侧只看包存在性：ksud 在**别的应用**的 nativeLibraryDir 里，
+     * 那是别的应用的 `apk_data_file`，App 进程（untrusted_app）读它会被
+     * SELinux 拒绝 —— 内容签名扫描在 App 进程里恒为空，真机表现就是界面一直
+     * 「未检测到管理器」。包存在性只查 PackageManager 元数据，App 进程有权限，
+     * 而且不依赖 Shizuku。
+     *
+     * 要「确实带 ksud」的权威结论，用 [mergeServiceScan] 合入服务侧结果。
      */
     @Synchronized
     fun scan(force: Boolean = false): List<KsuSource.DeviceManager> {
         val now = System.currentTimeMillis()
-        val hit = cached
-        if (!force && hit != null && now - cachedAt < CACHE_TTL_MS) return hit
-        val pm = context.packageManager
-        /*
-         * 这里的扫描**不在提权关键路径上**（IO 线程、结果缓存 5 分钟），所以给
-         * 宽松的时间预算，把混淆 fork（随机改名 + 非已知包名）也能找出来。
-         * 提权链路走的是 [KsudStage.scanManagerLib] 的快速通道，不用等这么久。
-         */
-        val out = KsudStage.scanManagerLibs(pm, KsudStage.DETECT_SCAN_BUDGET_MS).mapNotNull { (file, pkg) ->
-            if (!file.isFile || file.length() <= 0L) return@mapNotNull null
-            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
-            KsuSource.DeviceManager(pkg, version)
+        if (force || installedAt == 0L || now - installedAt >= CACHE_TTL_MS) {
+            val pm = context.packageManager
+            installed = KsudStage.scanInstalledManagers(pm).map { toSource(it) }
+            installedAt = now
         }
-        /*
-         * 空结果**不写缓存**。
-         *
-         * 之前无论扫没扫到都写缓存，于是「一次扫空」会把「未检测到」钉死 5 分钟
-         * （CACHE_TTL_MS）：用户刚装好管理器就点「重新检测」，界面仍然是
-         * 「未检测到」，除非等满 5 分钟或重启 APP —— 看上去就是「检测不到管理器」。
-         *
-         * 空结果本来就说明「此刻设备上还没有带 ksud 的管理器」，不是稳定结论，
-         * 缓存它没有意义；下一次调用重新扫即可（扫包只在 IO 线程发生）。
-         */
-        if (out.isNotEmpty()) {
-            cached = out
-            cachedAt = now
-        } else {
-            cached = null
-            cachedAt = 0L
+        return merged()
+    }
+
+    /**
+     * 合入服务侧（shell uid）扫出来的管理器列表，并返回合并后的候选。
+     *
+     * 服务侧结果**覆盖**同名包的应用侧结果（它的版本号更准），但不会把应用侧
+     * 已知的包名抹掉 —— 万一服务侧这次没扫到（比如 Shizuku 刚启动还没连上），
+     * 界面也不至于从「有」变回「无」。
+     */
+    @Synchronized
+    fun mergeServiceScan(entries: List<KsudStage.ManagerEntry>): List<KsuSource.DeviceManager> {
+        if (entries.isEmpty()) return merged()
+        service = entries.map { toSource(it) }
+        return merged()
+    }
+
+    /** 服务侧结果（最近一次），供 UI 展示「已验证带 ksud」的来源。 */
+    @Synchronized
+    fun serviceVerified(): Set<String> = service.map { it.packageName }.toSet()
+
+    /** 合并两条通道：服务侧优先，同名只保留一条。 */
+    private fun merged(): List<KsuSource.DeviceManager> {
+        val out = ArrayList<KsuSource.DeviceManager>(service.size + installed.size)
+        val seen = HashSet<String>()
+        for (m in service) {
+            if (seen.add(m.packageName)) out.add(m)
+        }
+        for (m in installed) {
+            if (seen.add(m.packageName)) out.add(m)
         }
         return out
     }
+
+    private fun toSource(entry: KsudStage.ManagerEntry) =
+        KsuSource.DeviceManager(entry.packageName, entry.versionName)
 
     /**
      * 从扫描结果里选出接管用的管理器。

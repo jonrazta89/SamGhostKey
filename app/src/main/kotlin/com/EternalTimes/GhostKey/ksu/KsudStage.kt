@@ -89,6 +89,83 @@ object KsudStage {
         return s.contains("late-load") && s.contains("kernelsu", ignoreCase = true)
     }
 
+    /**
+     * 一台已识别的 Root 管理器。
+     *
+     * [packageName] 包名；[versionName] 管理器版本（取不到为 null）；
+     * [libPath] 其 ksud 的真实路径 —— **只有服务侧扫描拿得到**：ksud 躺在别的
+     * 应用的 nativeLibraryDir 里，App 进程（untrusted_app）没有读权限。
+     */
+    data class ManagerEntry(
+        val packageName: String,
+        val versionName: String? = null,
+        val libPath: String? = null,
+    )
+
+    /**
+     * 【应用侧通道】按「包是否安装」识别 Root 管理器。
+     *
+     * 为什么必须有这条通道：ksud 被管理器打进 `lib/arm64/`（安装后落在
+     * `/data/app/<pkg>/lib/arm64/`），那是**别的应用的** `apk_data_file`。
+     * App 进程（untrusted_app）读它会被 SELinux 拒绝 —— 内容签名扫描在 App
+     * 进程里恒为空，真机表现就是界面一直「未检测到管理器」，而同一套扫描在
+     * UserService（shell uid）里却能扫到（提权链路正是靠它拿到管理器自带的
+     * ksud）。
+     *
+     * 包存在性只查 PackageManager 的元数据，App 进程有权限（manifest 已声明
+     * QUERY_ALL_PACKAGES，`<queries>` 另列了已知包名），所以这条通道
+     * **不依赖 Shizuku**、毫秒级可用。它认不出包名不可预知的自编译 fork ——
+     * 那部分由服务侧通道（[scanManagerLibs]）补。
+     */
+    fun scanInstalledManagers(pm: android.content.pm.PackageManager): List<ManagerEntry> {
+        val out = ArrayList<ManagerEntry>()
+        for (pkg in MANAGER_PACKAGES) {
+            val installed = runCatching { pm.getApplicationInfo(pkg, 0) }.isSuccess
+            if (!installed) continue
+            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+            out.add(ManagerEntry(pkg, version))
+        }
+        return out
+    }
+
+    /**
+     * 解析服务侧（UserService / shell uid）返回的管理器列表。
+     *
+     * 每行格式：`pkg\tversion\tlibPath`，version 与 libPath 可为空串。
+     * 纯函数，便于单测。
+     */
+    fun parseManagerList(text: String): List<ManagerEntry> {
+        val out = ArrayList<ManagerEntry>()
+        for (raw in text.lineSequence()) {
+            if (raw.isBlank()) continue
+            /*
+             * 先按制表符切分、再逐字段 trim —— 不能先 trim 整行：那样
+             * "\t32680"（首字段缺失）会被 trim 成 "32680"，凭空多出一条包名。
+             */
+            val f = raw.split('\t')
+            val pkg = f.getOrNull(0)?.trim().orEmpty()
+            if (pkg.isEmpty()) continue
+            out.add(
+                ManagerEntry(
+                    packageName = pkg,
+                    versionName = f.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() },
+                    libPath = f.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() },
+                )
+            )
+        }
+        return out
+    }
+
+    /**
+     * 把管理器列表编码成给 App 解析的文本（每行 `pkg\tversion\tlibPath`）。
+     *
+     * 用制表符分隔而不是空格：包名/路径都不含制表符，而版本号可能含空格。
+     */
+    fun formatManagerList(entries: List<ManagerEntry>): String =
+        entries.joinToString("\n") {
+            "${it.packageName}\t${it.versionName.orEmpty()}\t${it.libPath.orEmpty()}"
+        }
+
     /** nativeLibraryDir 下定位 ksud：先常规名，再按内容扫（覆盖混淆改名）。 */
     private fun findKsudInDir(dir: java.io.File): java.io.File? {
         if (!dir.isDirectory) return null
@@ -221,6 +298,8 @@ object KsudStage {
         seen: MutableSet<String>,
         budgetMs: Long,
     ) {
+        /* 预算为 0 = 只走已知包名快速通道，不必枚举全部已装应用（省一次大查询）。 */
+        if (budgetMs <= 0L) return
         val infos = runCatching { pm.getInstalledPackages(0) }.getOrDefault(emptyList())
         val deadline = System.currentTimeMillis() + budgetMs
         for (info in infos) {

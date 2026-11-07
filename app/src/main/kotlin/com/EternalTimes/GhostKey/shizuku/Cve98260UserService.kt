@@ -1464,6 +1464,31 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         Log.i(TAG, "selected manager package: ${selectedManager ?: "<auto>"}")
     }
 
+    /**
+     * 枚举设备上所有携带 ksud 的 Root 管理器。
+     *
+     * 这个扫描**必须在服务侧做**：管理器的 ksud 落在**别的应用**的
+     * nativeLibraryDir（`/data/app/<pkg>/lib/arm64/`），那是别的应用的
+     * `apk_data_file`；App 进程（untrusted_app）读它会被 SELinux 拒绝，
+     * 内容签名扫描在 App 进程里恒为空 —— 界面就一直显示「未检测到管理器」。
+     * UserService 跑在 shell（uid 2000），读得到。
+     *
+     * [budgetMs] <= 0 只走已知包名快速通道（毫秒级）；> 0 时额外做一次全量
+     * 兜底扫描（能认出包名不可预知、且 ksud 被随机改名的混淆 fork）。
+     */
+    override fun listManagerPackages(budgetMs: Long): String {
+        val pm = context.packageManager
+        val libs = runCatching {
+            KsudStage.scanManagerLibs(pm, if (budgetMs > 0) budgetMs else 0L)
+        }.getOrDefault(emptyList())
+        val entries = libs.map { (file, pkg) ->
+            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+            KsudStage.ManagerEntry(pkg, version, file.absolutePath)
+        }
+        Log.i(TAG, "manager packages listed: ${entries.size} (budget=${budgetMs}ms)")
+        return KsudStage.formatManagerList(entries)
+    }
+
     override fun getKernelRelease(): String =
         runCatching { System.getProperty("os.version") ?: "unknown" }.getOrDefault("unknown")
 

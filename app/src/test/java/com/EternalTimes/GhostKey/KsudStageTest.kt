@@ -97,4 +97,37 @@ class KsudStageTest {
         // 体积不足下限
         assertFalse(KsudStage.containsKsudSignature(ByteArray(1024)))
     }
+
+    @Test
+    fun `服务侧管理器列表解析`() {
+        val text = "me.weishu.kernelsu\t32680\t/data/app/x/lib/arm64/libksud.so\n" +
+            "com.sukisu.ultra\t41150\t/data/app/y/lib/arm64/libtqqfthevwb.so"
+        val list = KsudStage.parseManagerList(text)
+        assertEquals(2, list.size)
+        assertEquals("me.weishu.kernelsu", list[0].packageName)
+        assertEquals("32680", list[0].versionName)
+        assertEquals("/data/app/x/lib/arm64/libksud.so", list[0].libPath)
+        assertEquals("com.sukisu.ultra", list[1].packageName)
+        assertEquals("41150", list[1].versionName)
+    }
+
+    @Test
+    fun `服务侧管理器列表容忍缺字段与空行`() {
+        val list = KsudStage.parseManagerList("\nme.weishu.kernelsu\t\n\n\t32680\n")
+        assertEquals(1, list.size)
+        assertEquals("me.weishu.kernelsu", list[0].packageName)
+        assertEquals(null, list[0].versionName)
+        assertEquals(null, list[0].libPath)
+        assertTrue(KsudStage.parseManagerList("").isEmpty())
+        assertTrue(KsudStage.parseManagerList("   \n\n").isEmpty())
+    }
+
+    @Test
+    fun `管理器列表编码后能原样解析回来`() {
+        val entries = listOf(
+            KsudStage.ManagerEntry("me.weishu.kernelsu", "32680", "/data/app/x/lib/arm64/libksud.so"),
+            KsudStage.ManagerEntry("com.sukisu.ultra", "41150", null),
+        )
+        assertEquals(entries, KsudStage.parseManagerList(KsudStage.formatManagerList(entries)))
+    }
 }
