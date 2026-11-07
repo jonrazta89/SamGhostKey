@@ -79,7 +79,36 @@ object KsudStage {
     }
 
     private fun isKsudFile(f: java.io.File): Boolean = runCatching {
-        f.length() >= KSUD_MIN_SIZE && containsKsudSignature(f.readBytes())
+        if (f.length() < KSUD_MIN_SIZE) return@runCatching false
+        f.inputStream().use { input ->
+            val head = ByteArray(4)
+            if (input.read(head) != 4) return@use false
+            if (head[0] != 0x7f.toByte() || head[1] != 'E'.code.toByte() ||
+                head[2] != 'L'.code.toByte() || head[3] != 'F'.code.toByte()
+            ) return@use false
+            /*
+             * 分块扫两个语义串，不再把整个文件读进内存。
+             *
+             * 真 ksud 有 5~6.5 MB；原来的 readBytes() + String(bytes) 会为**每个**
+             * 候选分配几十 MB 临时对象（6 MB 字节数组 + 12 MB 字符数组），
+             * 全量扫包时几十个候选叠起来就是几百 MB 垃圾 —— 主线程上做这件事
+             * 就是「应用启动很慢」的主因。
+             */
+            var lateLoad = false
+            var kernelSu = false
+            val buf = ByteArray(256 * 1024)
+            var carry = ""
+            while (!lateLoad || !kernelSu) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                val s = carry + String(buf, 0, n, Charsets.ISO_8859_1)
+                if (!lateLoad && s.contains("late-load")) lateLoad = true
+                if (!kernelSu && s.contains("kernelsu", ignoreCase = true)) kernelSu = true
+                /* 保留尾部避免语义串正好跨块边界而漏检。 */
+                carry = s.takeLast(32)
+            }
+            lateLoad && kernelSu
+        }
     }.getOrDefault(false)
 
     /**

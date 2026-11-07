@@ -229,7 +229,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { viewModel.detectKsuSource() }) {
+                    OutlinedButton(onClick = { viewModel.detectKsuSource(force = true) }) {
                         Text("重新检测")
                     }
                     if (cands.size > 1) {
@@ -245,14 +245,14 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        "检测到 ${cands.size} 个管理器。接管会加载所选管理器自带的 ksud，"
-                            + "使内核模块与已装管理器同源（否则 fork 如 SukiSU 不识别提权、也不弹授权框）。",
+                        "检测到 ${cands.size} 个管理器。接管会加载所选管理器自带的 ksud，" +
+                            "使内核模块与已装管理器同源（否则部分管理器不识别提权、也不弹授权框）。",
                         color = CvePalette.TextMuted,
                         style = MaterialTheme.typography.labelSmall,
                     )
                 } else {
                     Text(
-                        "提权时优先从上面检测到的管理器提取 ksud（认内容签名，任何 fork 均可命中），" +
+                        "提权时优先从上面检测到的管理器提取 ksud（按内容特征识别，改名或二次打包也能命中），" +
                             "未检测到才回落 APK 内置 ksud。管理器升级即获得新内核 KMI 支持，无需更新本应用。",
                         color = CvePalette.TextMuted,
                         style = MaterialTheme.typography.labelSmall,

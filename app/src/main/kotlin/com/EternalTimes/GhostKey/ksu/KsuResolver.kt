@@ -31,16 +31,50 @@ sealed class KsuSource {
  */
 class KsuResolver(private val context: Context) {
 
-    fun detect(): KsuSource {
+    /** 扫描结果缓存（时间戳）。同一批候选不重复全量扫包。 */
+    private var cached: List<KsuSource.DeviceManager>? = null
+    private var cachedAt = 0L
+
+    /**
+     * 扫描设备上所有携带 ksud 的管理器（**只扫一次**，检测与选择共用）。
+     *
+     * [force] = true 时忽略缓存（设置页的「重新检测」按钮）。
+     *
+     * 为什么要缓存：全量扫包要枚举已装应用、逐个看 nativeLibraryDir、再按内容
+     * 签名验证候选 .so —— 在真机上是几百毫秒到几秒的 IO。原来 ViewModel 一次
+     * 启动里会做**两轮**（detect + detectAll），而且在主线程上做。
+     */
+    @Synchronized
+    fun scan(force: Boolean = false): List<KsuSource.DeviceManager> {
+        val now = System.currentTimeMillis()
+        val hit = cached
+        if (!force && hit != null && now - cachedAt < CACHE_TTL_MS) return hit
         val pm = context.packageManager
-        val lib = KsudStage.scanManagerLib(pm) ?: return KsuSource.Bundled()
-        val (file, pkg) = lib
-        val version = runCatching {
-            pm.getPackageInfo(pkg, 0).versionName
-        }.getOrNull()
-        if (!file.isFile || file.length() <= 0L) return KsuSource.Bundled()
-        return KsuSource.DeviceManager(pkg, version)
+        val out = KsudStage.scanManagerLibs(pm).mapNotNull { (file, pkg) ->
+            if (!file.isFile || file.length() <= 0L) return@mapNotNull null
+            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+            KsuSource.DeviceManager(pkg, version)
+        }
+        cached = out
+        cachedAt = now
+        return out
     }
+
+    /**
+     * 从扫描结果里选出接管用的管理器。
+     *
+     * [selected] 为空或不在候选里 → 取优先级首个（[scan] 的返回顺序即优先级）。
+     */
+    fun pick(candidates: List<KsuSource.DeviceManager>, selected: String?): KsuSource {
+        if (candidates.isEmpty()) return KsuSource.Bundled()
+        val chosen = selected
+            ?.takeIf { s -> candidates.any { it.packageName == s } }
+            ?.let { pkg -> candidates.first { it.packageName == pkg } }
+            ?: candidates.first()
+        return chosen
+    }
+
+    fun detect(): KsuSource = pick(scan(), null)
 
     /**
      * 枚举设备上所有携带 ksud 的管理器（v2.2.0 多管理器选择）。
@@ -48,32 +82,22 @@ class KsuResolver(private val context: Context) {
      * 供 UI 在检出多个管理器时列出候选让用户挑选；接管与 [detect] 一致，
      * 认内容签名不认包名。无命中时返回空列表（= 只有内置 ksud 可用）。
      */
-    fun detectAll(): List<KsuSource.DeviceManager> {
-        val pm = context.packageManager
-        return KsudStage.scanManagerLibs(pm).mapNotNull { (file, pkg) ->
-            if (!file.isFile || file.length() <= 0L) return@mapNotNull null
-            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
-            KsuSource.DeviceManager(pkg, version)
-        }
-    }
+    fun detectAll(): List<KsuSource.DeviceManager> = scan()
 
     /**
      * 按用户选定包名解析来源；[selected] 为空或该包名无 ksud 时，回落到 [detect]。
      */
-    fun detect(selected: String?): KsuSource {
-        if (selected.isNullOrBlank()) return detect()
-        val pm = context.packageManager
-        val lib = KsudStage.scanManagerLibFor(pm, selected) ?: return detect()
-        val (file, pkg) = lib
-        if (!file.isFile || file.length() <= 0L) return KsuSource.Bundled()
-        val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
-        return KsuSource.DeviceManager(pkg, version)
-    }
+    fun detect(selected: String?): KsuSource = pick(scan(), selected)
 
     fun label(source: KsuSource): String = when (source) {
         is KsuSource.DeviceManager ->
             "设备管理器 ${source.packageName}" + (source.versionName?.let { " v$it" } ?: "")
         is KsuSource.Bundled -> source.note
         is KsuSource.Unavailable -> "不可用：${source.reason}"
+    }
+
+    private companion object {
+        /** 扫描结果缓存时长（毫秒）。设置页的「重新检测」走强制刷新。 */
+        const val CACHE_TTL_MS = 5 * 60 * 1000L
     }
 }
