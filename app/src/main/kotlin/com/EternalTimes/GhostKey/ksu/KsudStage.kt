@@ -48,6 +48,31 @@ object KsudStage {
     private const val KSUD_MIN_SIZE = 512L * 1024
 
     /**
+     * ksud 体积上限：真 ksud 是 ~5–6.5 MB。超过这个上限的 .so 不可能是 ksud，
+     * 全量扫描时用它把「巨型游戏资源库」挡在读文件之前（否则一个字节能读几百 MB）。
+     */
+    private const val KSUD_MAX_SIZE = 32L * 1024 * 1024
+
+    /**
+     * 全量兜底扫描（getInstalledPackages + 逐包 nativeLibraryDir 内容扫）的时间预算。
+     *
+     * 真机 alpha06 日志：从「bundled ksud ready」到「manager ksud staged」卡了
+     * **108 秒** —— 期间已知包名 me.weishu.kernelsu **早就命中了**，却因为
+     * `scanManagerLib` 走的是 `scanManagerLibs(pm).firstOrNull()`，必须等全量
+     * 扫包跑完才返回。
+     *
+     * 全量扫描的代价是 O(应用数 × 大 .so 体积)：每个候选都要把整个文件读完去找
+     * 「late-load」/「kernelsu」，几百个应用叠起来就是 GB 级 IO。
+     */
+    const val FULL_SCAN_BUDGET_MS = 8_000L
+
+    /**
+     * 设置页「检测管理器」用的宽松预算：那条链路在 IO 线程上跑，不在提权关键
+     * 路径上，可以多给点时间把混淆 fork 也找出来。
+     */
+    const val DETECT_SCAN_BUDGET_MS = 45_000L
+
+    /**
      * 纯函数：给定字节判断是否 ksud —— ELF 魔数 + 带 late-load / kernelsu 语义串。
      *
      * 用于识别**随机改名**的混淆 fork：如 SukiSU Ultra（com.sukisu.ultra）把 ksud
@@ -71,7 +96,8 @@ object KsudStage {
         if (named.isFile && isKsudFile(named)) return named
         val sos = runCatching {
             dir.listFiles { f: java.io.File ->
-                f.isFile && f.name.endsWith(".so") && f.length() >= KSUD_MIN_SIZE
+                f.isFile && f.name.endsWith(".so") &&
+                    f.length() in KSUD_MIN_SIZE..KSUD_MAX_SIZE
             }
         }.getOrNull() ?: return null
         // ksud 通常是目录里最大的 .so，从大到小试，尽早命中、少读文件
@@ -79,7 +105,8 @@ object KsudStage {
     }
 
     private fun isKsudFile(f: java.io.File): Boolean = runCatching {
-        if (f.length() < KSUD_MIN_SIZE) return@runCatching false
+        val size = f.length()
+        if (size < KSUD_MIN_SIZE || size > KSUD_MAX_SIZE) return@runCatching false
         f.inputStream().use { input ->
             val head = ByteArray(4)
             if (input.read(head) != 4) return@use false
@@ -127,7 +154,21 @@ object KsudStage {
      */
     fun scanManagerLib(
         pm: android.content.pm.PackageManager,
-    ): Pair<java.io.File, String>? = scanManagerLibs(pm).firstOrNull()
+    ): Pair<java.io.File, String>? {
+        val out = ArrayList<Pair<java.io.File, String>>()
+        val seen = HashSet<String>()
+        scanKnownPackages(pm, out, seen)
+        /*
+         * 快速通道：已知家族包名命中即返回。
+         *
+         * 原来这里是 `scanManagerLibs(pm).firstOrNull()` —— 即使第一个已知包名
+         * 就命中了，也必须等**全量扫包**跑完才返回。真机上这一等就是 108 秒，
+         * 而提权链路在这 108 秒里什么都做不了（连 util 预算都在空转）。
+         */
+        if (out.isNotEmpty()) return out.first()
+        scanAllPackages(pm, out, seen, FULL_SCAN_BUDGET_MS)
+        return out.firstOrNull()
+    }
 
     /**
      * 已知家族包名（供 UI 展示与优先排序）。
@@ -146,22 +187,50 @@ object KsudStage {
      */
     fun scanManagerLibs(
         pm: android.content.pm.PackageManager,
+        budgetMs: Long = FULL_SCAN_BUDGET_MS,
     ): List<Pair<java.io.File, String>> {
         val out = ArrayList<Pair<java.io.File, String>>()
         val seen = HashSet<String>()
+        scanKnownPackages(pm, out, seen)
+        scanAllPackages(pm, out, seen, budgetMs)
+        return out
+    }
+
+    /** 已知家族包名逐个查（nativeLibraryDir 直读，最快最准）。 */
+    private fun scanKnownPackages(
+        pm: android.content.pm.PackageManager,
+        out: MutableList<Pair<java.io.File, String>>,
+        seen: MutableSet<String>,
+    ) {
         for (pkg in MANAGER_PACKAGES) {
             val lib = findKsudForPackage(pm, pkg) ?: continue
             if (seen.add(pkg)) out.add(lib to pkg)
         }
+    }
+
+    /**
+     * 全量兜底扫描：枚举已装应用，逐个看 nativeLibraryDir 里有没有 ksud。
+     *
+     * [budgetMs] 是这一段的**总时间预算**：超时就收手并返回已找到的结果（宁少
+     * 不慢）。没有预算的话，真机上这一步要 100 多秒（几百个应用 × 几个 MB 的
+     * .so 全读一遍去找语义串），提权链路在这段时间里完全空转。
+     */
+    private fun scanAllPackages(
+        pm: android.content.pm.PackageManager,
+        out: MutableList<Pair<java.io.File, String>>,
+        seen: MutableSet<String>,
+        budgetMs: Long,
+    ) {
         val infos = runCatching { pm.getInstalledPackages(0) }.getOrDefault(emptyList())
+        val deadline = System.currentTimeMillis() + budgetMs
         for (info in infos) {
+            if (System.currentTimeMillis() >= deadline) return
             val pkg = info.packageName
             if (pkg in seen) continue
             val dirS = info.applicationInfo?.nativeLibraryDir ?: continue
             val lib = findKsudInDir(java.io.File(dirS)) ?: continue
             if (seen.add(pkg)) out.add(lib to pkg)
         }
-        return out
     }
 
     /** 指定包名的管理器 APK 里定位 ksud；未安装/未命中返回 null。 */

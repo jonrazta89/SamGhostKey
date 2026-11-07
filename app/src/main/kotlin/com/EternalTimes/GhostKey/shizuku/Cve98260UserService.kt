@@ -1255,6 +1255,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         }
         var staged: File? = null
         val pm = context.packageManager
+        val scanStart = System.currentTimeMillis()
         val scanned = runCatching {
             val sel = selectedManager
             if (!sel.isNullOrBlank())
@@ -1262,6 +1263,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             else
                 KsudStage.scanManagerLib(pm)
         }.getOrNull()
+        /*
+         * 扫描耗时必须打出来：这一段曾经稳定卡 108 秒（已知包名早已命中，却因为
+         * 走全量扫包才返回），提权链路在这段时间里完全空转。
+         */
+        callback?.onLog("<s> ksud PM scan: ${System.currentTimeMillis() - scanStart} ms")
         if (scanned != null) {
             val (lib, pkg) = scanned
             staged = runCatching {

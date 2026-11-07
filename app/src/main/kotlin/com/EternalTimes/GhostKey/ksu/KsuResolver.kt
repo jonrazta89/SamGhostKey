@@ -50,7 +50,12 @@ class KsuResolver(private val context: Context) {
         val hit = cached
         if (!force && hit != null && now - cachedAt < CACHE_TTL_MS) return hit
         val pm = context.packageManager
-        val out = KsudStage.scanManagerLibs(pm).mapNotNull { (file, pkg) ->
+        /*
+         * 这里的扫描**不在提权关键路径上**（IO 线程、结果缓存 5 分钟），所以给
+         * 宽松的时间预算，把混淆 fork（随机改名 + 非已知包名）也能找出来。
+         * 提权链路走的是 [KsudStage.scanManagerLib] 的快速通道，不用等这么久。
+         */
+        val out = KsudStage.scanManagerLibs(pm, KsudStage.DETECT_SCAN_BUDGET_MS).mapNotNull { (file, pkg) ->
             if (!file.isFile || file.length() <= 0L) return@mapNotNull null
             val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
             KsuSource.DeviceManager(pkg, version)
