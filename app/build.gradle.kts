@@ -19,8 +19,10 @@ val appVersionBase = "2.2.0"
  * 不会和将来的正式版 2.1.0 混淆（之前 test 包直接用 `2.1.0`，一眼看去
  * 跟正式版一模一样，这是真机实测时发现并修掉的）。
  * alpha 预发布用 `alphaNN`（如 2.1.0-alpha01），沿用 .test 包名与发布方式。
+ *
+ * **正式版线置空**：版本名即基础版本号本身（2.2.0），不留悬空连字符。
  */
-val variantLabel = "alpha07"
+val variantLabel = ""
 
 /**
  * 最终版本名，例如 `2.1.0-test`。变体标识为空时就是基础版本号本身
@@ -34,10 +36,9 @@ val appVersionName = listOf(appVersionBase, variantLabel)
  * 测试变体标记：非空时 applicationId 加 `.test` 后缀、产物名加 `-test`，
  * 可与正式版（com.EternalTimes.GhostKey）**并存安装**，互不覆盖。
  *
- * 2.1.0 走这条路线：这一版是失败路径加固 + mlockall 保护修复，属于
- * 「先在测试包上验证」的性质，正式包 2.0.0 暂不动。
+ * **正式版线置空**：包名即 `com.EternalTimes.GhostKey`。
  */
-val testVariantSuffix = ".test"
+val testVariantSuffix = ""
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -82,21 +83,22 @@ android {
     compileSdkMinor = 2
 
     defaultConfig {
-        // 测试变体：.test 包名可与正式版并存安装（见 testVariantSuffix 的说明）
+        // 正式版：包名不带 .test 后缀，与测试线可并存安装（见 testVariantSuffix 的说明）
         applicationId = "com.EternalTimes.GhostKey$testVariantSuffix"
         minSdk = 31
         targetSdk = 37
         /**
          * versionCode 分两条线，互不占用：
-         *   · 正式版线（com.EternalTimes.GhostKey）      小整数递增：1.1.4=17 … 2.0.0=24
+         *   · 正式版线（com.EternalTimes.GhostKey）      小整数递增：1.1.4=17 … 2.0.0=24、2.2.0=25
          *   · test 线   （com.EternalTimes.GhostKey.test）独立号段：2.0.0-alpha01..03 = 20001..20003，
          *     2.1.0 线 = 21001（-test 构建）/ 21002（2.1.0-alpha01），2.2.0 线 = 22002（2.2.0-alpha01）/ 22003（2.2.0-alpha02）/ 22004（2.2.0-alpha03）
          *     / 22005（alpha04）/ 22006（alpha05）/ 22007（alpha06）/ 22008（alpha07）
+         *     / 22009（alpha08）
          *     （次版本号 → 对应号段，2.2 → 22xxx）。
          * 之前 test 包直接用了 25 —— 那是正式版线的下一个号，正式版 2.1.0 发布时
          * 必然撞号；两者的包名不同，Android 不会拦，但号段混在一起以后很难排查。
          */
-        versionCode = 22008
+        versionCode = 25
         versionName = appVersionName
         // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
         buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")

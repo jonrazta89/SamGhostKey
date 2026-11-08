@@ -1,6 +1,6 @@
 # GhostKey — CVE-2026-98260 一键提权工具
 
-> 主分支 **`main`** 为正式版线：包名 `com.EternalTimes.GhostKey`，当前以预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta2）构建正式版 **2.0.0**。
+> 主分支 **`main`** 为正式版线：包名 `com.EternalTimes.GhostKey`，当前以预发布工具链（AGP 9.6.0-alpha02 / Kotlin 2.5.0-Beta2）构建正式版 **2.2.0**。
 
 面向 **已授权安全研究 / 自用设备** 的 Android 一键提权工具。基于 **Shizuku + NDK Native**，把 exploit、内核偏移表与 OTA boot 镜像解析打包进单个 APK，手机上点击即可触发，无需 PC / 命令行。
 
@@ -25,8 +25,8 @@
 
 | 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
 |---|---|---|---|
-| 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
-| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha07** | [v2.2.0-alpha07](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha07) | [GhostKey-2.2.0-alpha07-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha07/GhostKey-2.2.0-alpha07-arm64-v8a-release.apk) |
+| 正式版（`main`） | **2.2.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.2.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0/GhostKey-2.2.0-arm64-v8a-release.apk) |
+| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha08** | [v2.2.0-alpha08](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha08) | [GhostKey-2.2.0-alpha08-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha08/GhostKey-2.2.0-alpha08-arm64-v8a-release.apk) |
 
 > 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
 
@@ -57,7 +57,7 @@
 | Jetpack Compose | BOM 2024.10.00（Material3） |
 | 目标 ABI | `arm64-v8a`（仅 64 位） |
 
-当前版本：**2.0.0**（versionCode 24，包名 `com.EternalTimes.GhostKey`）。
+当前版本：**2.2.0**（versionCode 25，包名 `com.EternalTimes.GhostKey`）。
 
 > Kotlin 2.5.0-Beta2 为预发布版，插件与 stdlib 走 JetBrains bootstrap 仓库（见 `settings.gradle.kts`）。
 
@@ -74,7 +74,7 @@
 
 ```bash
 ./gradlew assembleRelease
-# 产物：app/build/outputs/apk/release/GhostKey-2.0.0-arm64-v8a-release.apk
+# 产物：app/build/outputs/apk/release/GhostKey-2.2.0-arm64-v8a-release.apk
 ```
 
 ---
