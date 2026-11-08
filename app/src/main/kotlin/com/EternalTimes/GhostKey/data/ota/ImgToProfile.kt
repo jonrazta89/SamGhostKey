@@ -8,8 +8,9 @@ import com.EternalTimes.GhostKey.data.ProfileDocument
  * 字段来源（与 PC 端 make.py / offsets.h 的产出对齐，已用 PKJ110_F27 真值回归）：
  *   - BTF（boot.img 即可）：task_cred / task_struct_size / cred_uid
  *   - kallsyms（boot.img 解压后的内核镜像即可，见 [KallsymsExtractor]）：
- *       timer_link   = do_timer_create + 0xa8（make.py:189）
- *       cred_link    = prepare_creds  + 0x24（make.py:190）
+ *       timer_link   = do_timer_create 内 kmem_cache_alloc 的返回地址（实测）
+ *       cred_link    = prepare_creds  内 kmem_cache_alloc 的返回地址（实测）
+ *       task_alloc_link = task_struct slab 分配点的返回地址（实测）
  *       selinux_link = selinux_state
  *       user_ns      = init_user_ns
  *       root_user    = root_user
@@ -31,6 +32,23 @@ object ImgToProfile {
 
     /** prepare_creds 内返回指令偏移（PC 端 make.py 硬编码）。 */
     private const val CRED_LINK_INNER_OFFSET = 0x24L
+
+    /*
+     * ⚠️ 6.18 的 link 语义与这里**不一致**，别拿这里的输出覆盖仓库里已有的
+     * 6.18 profile。
+     *
+     * 实测（2026-11-02，小米 OS4.0.27.0 港版 OTA 的 boot.img，与仓库 6.18
+     * profile 的 _image_sha256 逐字相同）：
+     *   仓库 profile : timer_link = do_timer_create + 0x0  ← 符号**起始**地址
+     *                  cred_link  = prepare_creds  + 0x0
+     *   这里生成     : timer_link = do_timer_create + 0xa8
+     *                  cred_link  = prepare_creds  + 0x24
+     * 差的就是下面这两个 make.py 的函数内偏移（6.6 时代的假设）。slide_addr()
+     * 会把它当成符号地址直接加 slide，于是偏 0xa8 / 0x24。
+     *
+     * 6.18 的运行时解析走 calib_a 的「符号名匹配」而不是这些 link 值，所以
+     * 注入本身不受影响；但导出的 profile 若被别的路径当权威值用就会出错。
+     */
 
     /**
      * copy_process 内 `kmem_cache_alloc_node(task_struct_cachep, …)` 的返回地址偏移。
@@ -91,16 +109,27 @@ object ImgToProfile {
 
         val syms = info.symbols
         if (syms != null) {
-            syms["do_timer_create"]?.let { offset["timer_link"] = it + TIMER_LINK_INNER_OFFSET }
-            syms["prepare_creds"]?.let { offset["cred_link"] = it + CRED_LINK_INNER_OFFSET }
+            // 分配调用点：优先用镜像实测值（这个函数内偏移每个内核构建都不同）。
+            val sites = info.allocCallSites
+            sites[AllocCallSiteResolver.KEY_TIMER]?.let { offset["timer_link"] = it }
+            sites[AllocCallSiteResolver.KEY_CRED]?.let { offset["cred_link"] = it }
+            sites[AllocCallSiteResolver.KEY_TASK]?.let { offset["task_alloc_link"] = it }
+            if (sites[AllocCallSiteResolver.KEY_TIMER] == null && release.startsWith("6.6.")) {
+                // 兜底：解析器失败时，只有 6.6 系敢用写死偏移
+                // （6.6.118 上标定：do_timer_create+0xa8 / prepare_creds+0x24）。
+                syms["do_timer_create"]?.let { offset["timer_link"] = it + TIMER_LINK_INNER_OFFSET }
+                syms["prepare_creds"]?.let { offset["cred_link"] = it + CRED_LINK_INNER_OFFSET }
+                if (offset["task_alloc_link"] == null) {
+                    syms["copy_process"]?.let { offset["task_alloc_link"] = it + TASK_ALLOC_INNER_OFFSET }
+                }
+            }
+            // 其它内核解析不出调用点时宁可不写（导入按缺字段报错），
+            // 也不写一个必定匹配不上的错偏移。
             syms["selinux_state"]?.let { offset["selinux_link"] = it }
             syms["init_user_ns"]?.let { offset["user_ns"] = it }
             syms["root_user"]?.let { offset["root_user"] = it }
             syms["init_groups"]?.let { offset["groups"] = it }
             syms["init_ucounts"]?.let { offset["ucounts"] = it }
-            if (release.startsWith("6.6.")) {
-                syms["copy_process"]?.let { offset["task_alloc_link"] = it + TASK_ALLOC_INNER_OFFSET }
-            }
         }
 
         // kitimer_node = k_itimer.it 的偏移 + cpu_timer.node 的偏移（6.18=0xe0，6.6=0x78）

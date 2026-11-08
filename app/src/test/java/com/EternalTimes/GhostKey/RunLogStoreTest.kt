@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * 运行日志仓库的纯文件逻辑单测（不依赖 Android 环境，目录可注入）。
@@ -186,5 +187,57 @@ class RunLogStoreTest {
         val dir = tmp.newFolder("empty_run_logs")
         assertTrue(RunLogStore(dir).listRuns().isEmpty())
         assertEquals(1, RunLogStore(dir).nextRunId())
+    }
+
+    /**
+     * 回归：缺 `# run=` 头时，序号要从**文件名里真正的序号段**取。
+     *
+     * 旧实现用宽松正则 `-([0-9]{4,})(?:-[0-9]+)?\.log$`，对
+     * `run-20261102-191019-0007.log` 会匹配到**时分秒 191019**，
+     * 于是「第 191019 次运行」，并且 nextRunId() 从此爆炸。
+     */
+    @Test
+    fun `缺头文件时序号取自文件名序号段而不是时间戳`() {
+        val s = store()
+        val dir = tmp.newFolder("run_logs_nohead")
+        val store = RunLogStore(dir)
+        val f = File(dir, "run-20261102-191019-0007.log")
+        f.writeText("=== log ===\n[00:00:00] orphan\n")
+        val meta = store.listRuns().single()
+        assertEquals("序号应取 0007，实际 ${meta.runId}", 7, meta.runId)
+        assertEquals(8, store.nextRunId())
+        assertTrue(s.listRuns().isEmpty())
+    }
+
+    /** 回归：删掉最新一条记录后，序号**不能回退**（否则「第 N 次」会乱序）。 */
+    @Test
+    fun `删掉最新记录后序号不回退`() {
+        val s = store()
+        s.begin(1, "", "", "").finish(RunResult.SUCCESS, 0, 1L)
+        s.begin(2, "", "", "").finish(RunResult.SUCCESS, 0, 1L)
+        assertEquals(3, s.nextRunId())
+        val latest = s.listRuns().first { it.runId == 2 }
+        s.delete(latest)
+        assertEquals("删掉最新一条后序号不应回退", 3, s.nextRunId())
+    }
+
+    /** 清空是用户显式的重置：序号从头开始。 */
+    @Test
+    fun `清空后序号从头开始`() {
+        val s = store()
+        s.begin(1, "", "", "").finish(RunResult.SUCCESS, 0, 1L)
+        s.begin(2, "", "", "").finish(RunResult.SUCCESS, 0, 1L)
+        s.clear()
+        assertEquals(1, s.nextRunId())
+    }
+
+    @Test
+    fun `记录条数与列表长度一致`() {
+        val s = store()
+        repeat(3) { i -> s.begin(i + 1, "", "", "").finish(RunResult.SUCCESS, 0, 1L) }
+        assertEquals(3, s.countRuns())
+        assertEquals(3, s.listRuns().size)
+        s.delete(s.listRuns().first())
+        assertEquals(2, s.countRuns())
     }
 }

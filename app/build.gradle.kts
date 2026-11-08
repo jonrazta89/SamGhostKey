@@ -1,4 +1,5 @@
 import java.io.FileInputStream
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -6,7 +7,37 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "2.0.0"
+/**
+ * 基础版本号（不含变体标识）。正式版与 test 变体共用同一个基础版本号，
+ * 便于对照「这是 2.1.0 的第几个构建」。
+ */
+val appVersionBase = "2.2.0"
+
+/**
+ * 变体标识。test 变体在版本名后加 `-test`：
+ * 界面标题显示 `v2.1.0-test · <commit>`、系统「应用信息」里也显示 2.1.0-test，
+ * 不会和将来的正式版 2.1.0 混淆（之前 test 包直接用 `2.1.0`，一眼看去
+ * 跟正式版一模一样，这是真机实测时发现并修掉的）。
+ * alpha 预发布用 `alphaNN`（如 2.1.0-alpha01），沿用 .test 包名与发布方式。
+ */
+val variantLabel = "alpha07"
+
+/**
+ * 最终版本名，例如 `2.1.0-test`。变体标识为空时就是基础版本号本身
+ * （将来转正式版时把 variantLabel 置空即可，不会留下多余的连字符）。
+ */
+val appVersionName = listOf(appVersionBase, variantLabel)
+    .filter { it.isNotBlank() }
+    .joinToString("-")
+
+/**
+ * 测试变体标记：非空时 applicationId 加 `.test` 后缀、产物名加 `-test`，
+ * 可与正式版（com.EternalTimes.GhostKey）**并存安装**，互不覆盖。
+ *
+ * 2.1.0 走这条路线：这一版是失败路径加固 + mlockall 保护修复，属于
+ * 「先在测试包上验证」的性质，正式包 2.0.0 暂不动。
+ */
+val testVariantSuffix = ".test"
 
 /**
  * 签名密码加载：优先从 local.properties（已被 .gitignore 忽略，不会进入版本库）读取，
@@ -51,10 +82,21 @@ android {
     compileSdkMinor = 2
 
     defaultConfig {
-        applicationId = "com.EternalTimes.GhostKey"
+        // 测试变体：.test 包名可与正式版并存安装（见 testVariantSuffix 的说明）
+        applicationId = "com.EternalTimes.GhostKey$testVariantSuffix"
         minSdk = 31
         targetSdk = 37
-        versionCode = 24
+        /**
+         * versionCode 分两条线，互不占用：
+         *   · 正式版线（com.EternalTimes.GhostKey）      小整数递增：1.1.4=17 … 2.0.0=24
+         *   · test 线   （com.EternalTimes.GhostKey.test）独立号段：2.0.0-alpha01..03 = 20001..20003，
+         *     2.1.0 线 = 21001（-test 构建）/ 21002（2.1.0-alpha01），2.2.0 线 = 22002（2.2.0-alpha01）/ 22003（2.2.0-alpha02）/ 22004（2.2.0-alpha03）
+         *     / 22005（alpha04）/ 22006（alpha05）/ 22007（alpha06）/ 22008（alpha07）
+         *     （次版本号 → 对应号段，2.2 → 22xxx）。
+         * 之前 test 包直接用了 25 —— 那是正式版线的下一个号，正式版 2.1.0 发布时
+         * 必然撞号；两者的包名不同，Android 不会拦，但号段混在一起以后很难排查。
+         */
+        versionCode = 22008
         versionName = appVersionName
         // 界面显示用：注入当前 git 短提交 id（VERSION_NAME 由 AGP 自动写入 BuildConfig）
         buildConfigField("String", "GIT_COMMIT", "\"${gitShortCommit()}\"")
@@ -151,7 +193,56 @@ java {
     }
 }
 
-// 产物文件名：GhostKey-<版本>-<abi>-<buildtype>.apk（如 GhostKey-2.0.0-arm64-v8a-release.apk）
+/**
+ * 内置 ksud 完整性校验（JVM 原生 SHA-256，不依赖 python/外部工具链）。
+ *
+ * 内置 assets/ksu/ksud 是手工投放的二进制，KMI 集冻结在打包时刻；一旦有人换了二进制
+ * 却没同步清单（或误替换成不兼容构建），这条校验会在任意构建（preBuild）时拦下。
+ * 换二进制后跑 `python3 tool/check_ksud.py --update` 就地同步清单的 sha256/size。
+ */
+val ksudAsset = file("src/main/assets/ksu/ksud")
+val ksudManifest = file("src/main/assets/ksu/ksud.manifest")
+
+val verifyBundledKsud = tasks.register("verifyBundledKsud") {
+    group = "verification"
+    description = "校验内置 ksud 与 ksud.manifest 的 sha256/size 一致"
+    inputs.file(ksudAsset)
+    inputs.file(ksudManifest)
+    doLast {
+        if (!ksudAsset.isFile) throw GradleException("内置 ksud 缺失: $ksudAsset")
+        if (!ksudManifest.isFile) throw GradleException("ksud 清单缺失: $ksudManifest")
+        val text = ksudManifest.readText()
+        val expSha = Regex("\"sha256\"\\s*:\\s*\"([0-9a-fA-F]+)\"").find(text)?.groupValues?.get(1)?.lowercase()
+        val expSize = Regex("\"size_bytes\"\\s*:\\s*(\\d+)").find(text)?.groupValues?.get(1)?.toLongOrNull()
+        val sha = MessageDigest.getInstance("SHA-256").let { md ->
+            ksudAsset.inputStream().use { ins ->
+                val buf = ByteArray(1 shl 20)
+                var n = ins.read(buf)
+                while (n > 0) {
+                    md.update(buf, 0, n)
+                    n = ins.read(buf)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+        }
+        val size = ksudAsset.length()
+        val problems = mutableListOf<String>()
+        if (expSize != size) problems += "size 不符: 清单 $expSize, 实际 $size"
+        if (expSha != sha) problems += "sha256 不符:\n  清单 $expSha\n  实际 $sha"
+        if (problems.isNotEmpty()) {
+            throw GradleException(
+                "内置 ksud 与清单不一致。若确已更换二进制，运行 `python3 tool/check_ksud.py --update` 同步清单后重试：\n" +
+                    problems.joinToString("\n"),
+            )
+        }
+        logger.lifecycle("verifyBundledKsud: OK (size=$size sha256=$sha)")
+    }
+}
+
+tasks.named("preBuild") { dependsOn(verifyBundledKsud) }
+
+// 产物文件名：GhostKey-<版本>-<abi>-<buildtype>.apk；测试变体版本名已含变体标识，
+// 如 GhostKey-2.2.0-alpha01-arm64-v8a-release.apk，避免与正式版撞名
 base {
     archivesName.set("GhostKey-$appVersionName")
 }

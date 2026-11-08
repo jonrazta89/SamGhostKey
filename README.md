@@ -8,17 +8,6 @@
 
 ---
 
-## 下载
-
-| 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
-|---|---|---|---|
-| 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
-| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha02** | [v2.2.0-alpha02](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha02) | [GhostKey-2.2.0-alpha02-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha02/GhostKey-2.2.0-alpha02-arm64-v8a-release.apk) |
-
-> 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
-
----
-
 ## 反馈与适配请求
 
 遇到问题（提权失败、崩溃、异常重启等）或希望适配新的内核 / 机型，请到 [GitHub Issues](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/issues) 提交，并**优先附上内核信息**——profile 以内核 `uname -r` 精确匹配，这是定位问题的第一依据。
@@ -28,7 +17,18 @@
 1. **内核版本 `uname -r`**（最优先，如 `6.18.21-android17-...`）。
 2. **运行日志**：设置页「查看运行记录」导出，或设备上 `/data/local/tmp/cve98260-app/` 下的日志文件。
 3. 机型与 Android 版本、复现步骤、所用 App 版本（界面底部 `v<版本> · <commit>`）。
-4. 涉及崩溃 / 异常重启时，尽量一并附上内核崩溃现场（pstore / dropbox / `dmesg` / avc 日志），便于定位。
+4. 涉及崩溃 / 异常重启时，可运行 `tool/collect_reboot_evidence.sh` 采集 pstore / dropbox / crash buffer / avc 等证据一并附上，便于定位。
+
+---
+
+## 下载
+
+| 版本线 | 最新版本 | 快捷跳转 | 直接下载 APK |
+|---|---|---|---|
+| 正式版（`main`） | **2.0.0** | [Releases · Latest](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/latest) | [GhostKey-2.0.0-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.0.0/GhostKey-2.0.0-arm64-v8a-release.apk) |
+| 测试线（`test`，预发布 `.test` 包） | **2.2.0-alpha07** | [v2.2.0-alpha07](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/tag/v2.2.0-alpha07) | [GhostKey-2.2.0-alpha07-arm64-v8a-release.apk](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases/download/v2.2.0-alpha07/GhostKey-2.2.0-alpha07-arm64-v8a-release.apk) |
+
+> 测试线为 `.test` 包名（`com.EternalTimes.GhostKey.test`），可与正式版共存。全部历史版本见 [Releases 页面](https://github.com/EternalTimes/CVE-2026-98260-GhostKey/releases)。
 
 ---
 
@@ -101,6 +101,10 @@
 
 内置 profile 覆盖 5.15 / 6.1 / 6.6 / 6.12 / 6.18 系列内核。已验证机型：OPPO Find X8 Ultra（`6.6.118-android15-...`）、小米 18 Pro Max（代号 **madrid** / SM8975 / `6.18.21-android17-...`）。以内核 `uname -r` **精确**匹配为准；机型配置（`app/src/main/assets/device_profiles/`）只是加速层，缺失不影响能否跑通。
 
+已内置、待真机回归：POCO M7（代号 **creek** / HyperOS 3.0.304.0.WBOMIXM / `5.15.194-android13-8-00019-gf4321180a397-ab15212794`）。
+
+机型配置分两层，**字段级**回落：`<product>-<device>.conf` 是机型专属（只写这台机器特有的项），`<product>.conf` 是家族通用（专属没写的字段由它补齐，通用层可不写 `device`，覆盖整个家族）。宿主加载时会校验配置里的 product/device 与本机一致，不一致直接拒用（套错机型的 page_offset = 「注入成功但偏移全错」）；`page_offset_trusted` 未置 1 前一律走 calibrate-b 运行时扫描，行为与「没有这份配置」完全一致。POCO M7 两层目前都是**待实测初版**（`creek.conf` 家族通用 + `creek-creek.conf` 机型专属）。
+
 给新设备生成 profile（离线、纯标准库、不需 root）：
 
 ```bash
@@ -109,12 +113,16 @@ python3 tool/mkprofile.py boot.img -o <release>.conf \
     --page-offset -549755813888
 ```
 
+工具从镜像实测三件事，不靠人工填偏移：链接期基址与 `_text` 所在的文件偏移（PE 容器与裸 arm64 Image 不同）、`kmem_cache_alloc` 的调用点（`timer_link` / `cred_link` / `task_alloc_link` 写的是 **BL 的下一条指令**，即 tracepoint 记的 `_RET_IP_`，不是函数基址）、以及 BTF 里的结构体布局。App 端的「导入 boot.img」走同一套算法（`AllocCallSiteResolver`）。
+
 ---
 
 ## 关键运行须知
 
 - **SELinux**：利用链会临时把 SELinux 由 Enforcing 改为 Permissive。只跑到 `verify` 时结束后保持 Permissive；`ksu-takeover` 成功后内核会切回 Enforcing。需要时 `adb reboot` 恢复。
 - **KernelSU 的 su**：KSU 没有 `/system/bin/su` 文件，内核在 `execve` 阶段按调用方 uid 替换 `su`，只有被授权的 uid 才探测得到。本工具走 App 自身 uid 通道探测。
+- **内置 ksud 与维护**：`ksu-takeover` 阶段用 `ksud late-load` 加载 KernelSU 模块（默认只到 `verify` 不触发）。APK 内置一份 `assets/ksu/ksud`（KernelSU v3.3.1，内嵌多套 KMI 的 `.ko`，KMI 集**冻结在打包时刻**）作为首选候选；接管时也会优先复用**设备已装管理器**里的 `libksud.so`（版本随管理器走、无需更新本应用）。内置产物由 `assets/ksu/ksud.manifest` 记录版本与 `sha256`，构建时（`preBuild`）自动校验；换二进制后运行 `python3 tool/check_ksud.py --update` 同步清单。
+- **SuKiSu 支持**：SukiSU / SukiSU Ultra（`com.sukisu.ultra`）、ReSukiSU、KernelSU-Next 等 KernelSU fork 的管理器仍携带 `libksud.so`、late-load 语义一致、模块仍注册为 `kernelsu`，因此**直接复用设备已装的 SuKiSu** 完成接管，无需为本应用单独打包 SuKiSu 产物。
 - **allow_shell**（默认关闭）：如需 shell（uid 2000）也能用 su，设备侧写开关文件后**必须重新加载模块**才生效：`adb shell 'echo 1 > /data/local/tmp/cve98260-app/allow_shell'`。
 
 ---

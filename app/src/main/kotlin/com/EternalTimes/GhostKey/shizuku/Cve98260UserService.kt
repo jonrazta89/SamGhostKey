@@ -45,6 +45,9 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     /** 本轮 rootd 的 stop 文件路径（每轮唯一，经 PC98260_STOP_FILE 传给原生体） */
     @Volatile private var stopFilePath: String = File(WORK_DIR, "rootd.stop").absolutePath
 
+    /** 用户选定的 Root 管理器包名（多管理器场景，经 [setManagerPackage] 传入；null=自动）。 */
+    @Volatile private var selectedManager: String? = null
+
     companion object {
         private const val TAG = "Cve98260UserService"
         private const val STATUS_MARKER = NativeContract.STATUS_MARKER
@@ -53,6 +56,24 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
         /** 与 pc98260_rootd.c 的 ROOT_SOCK 默认值一致（仅作回退/清理旧文件用） */
         private const val ROOT_SOCK = "/data/local/tmp/pc98260-root.sock"
         private const val ROOTD_MARKER = "C98260_ROOTD_READY=1"
+
+        /**
+         * 原生体的「我已经放弃」标记（uaf_plant.c 的 EXPLOIT_FAILED_MARKER）。
+         *
+         * 原生体打不出 rootd 标记时，宿主原来只能死等满 300 s 才报超时
+         * （真机实测白等 134 s）。看到这个标记就立刻收场。
+         */
+        private const val FAILED_MARKER = "C98260_EXPLOIT_FAILED=1"
+
+        /**
+         * 原生体进程退出后的宽限期（毫秒）。
+         *
+         * 宿主用 --daemon-exit 启动原生体：**成功路径里主进程本来就会正常退出**
+         * （rootd 是 cred child 的孙进程，还在跑），而 rootd 写就绪标记与主
+         * 进程退出是并行的两条线，中间有几十毫秒的窗口。所以进程退出后还要
+         * 再等这么久看标记有没有到，避免把「已提权成功」误报成失败。
+         */
+        private const val EXIT_GRACE_MS = 5_000L
 
         /**
          * E4：日志尾扫上限。旧实现只扫末 32KB，若就绪/失败标记写入较早、其后日志
@@ -88,6 +109,23 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
 
         /** 安全退场：等待 exploit 父进程退出的超时 */
         private const val EXPLOIT_EXIT_TIMEOUT_SEC = 20L
+
+        /**
+         * 上一次真正开始喷洒（INJECT 阶段）时的 boot_id。
+         *
+         * 一次成功的利用会把带内核指针的整页喷进内核 slab；那一页若被 cred slab
+         * 领走，某个 task 的 uid 就变成内核地址的低 32 位（负 userId），
+         * AMS 一扫描就抛 IllegalArgumentException -> system_server 崩溃 ->
+         * framework 重启循环。**脏 cred 在内核 slab 里，只有内核重启能清**，
+         * framework 重启清不掉。
+         *
+         * 所以「上次跑完没完整重启就再跑」= 直接踩进那个崩溃循环。
+         * 用 boot_id 把这条纪律自动化：boot_id 没变 == 没完整重启过。
+         */
+        private const val LAST_INJECT_BOOT_ID = "last_inject_boot_id.txt"
+
+        /** 返回码：上一次喷洒后设备没有完整重启过，本轮被拦下。 */
+        private const val RC_BOOT_ID_UNCHANGED = 6
 
         private const val RESULT_SLIDE = "slide.txt"
         private const val RESULT_PAGE_OFFSET = "page_offset.txt"
@@ -160,6 +198,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             //
             val stale = residualNativePids()
             if (stale.isNotEmpty()) return resolveResidual(stale, workDir, env, callback)
+            if (!bootIdGuard(workDir, callback)) return RC_BOOT_ID_UNCHANGED
             callback?.onLog("<b> cleaning up stale sockets and stop files")
             val staleFailed = cleanupStale(workDir)
             if (staleFailed > 0) {
@@ -193,7 +232,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             val pageOffsetPlan = DeviceProfilePolicy.planPageOffset(deviceProfile, runtimePageSize())
             callback?.onLog(
                 if (deviceProfile != null) {
-                    "<s> device profile ${deviceProfile.id}: ${pageOffsetPlan.reason}"
+                    "<s> device profile ${deviceProfile.id}" +
+                        " [${deviceProfile.mergedFrom.joinToString("+")}]" +
+                        (if (deviceProfile.inheritedFields.isEmpty()) "" else
+                            " inherited=${deviceProfile.inheritedFields.joinToString(",")}") +
+                        ": ${pageOffsetPlan.reason}"
                 } else {
                     "<s> no device profile for ${Build.PRODUCT}/${Build.DEVICE}: running calibrate-b"
                 },
@@ -237,6 +280,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             waitIdle()
 
             callback?.onProgress(stageIndex(Stage.INJECT), "running")
+            /*
+             * 从这一刻起内核 slab 可能已经被喷洒过 -> 记下当前 boot_id。
+             * 下一轮若 boot_id 没变，就说明设备没完整重启过，直接拦下。
+             */
+            markInjectBootId(workDir)
             val proc = startProcess(
                 listOf(
                     nativeLib.absolutePath, "exploit",
@@ -251,7 +299,19 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             callback?.onLog("<b> injection started (pid held by native), waiting for rootd...")
 
             if (!waitForRootd(logFile, INJECT_TIMEOUT_SEC * 1000)) {
-                callback?.onLog("<s> error: rootd not ready in time, injection failed")
+                val gaveUp = tailContains(logFile, FAILED_MARKER)
+                val proc = exploitProcess
+                val died = proc != null && !proc.isAlive
+                callback?.onLog(
+                    when {
+                        gaveUp ->
+                            "<s> error: exploit gave up before rootd was ready (native abort marker)"
+                        died ->
+                            "<s> error: exploit process exited unexpectedly, injection failed"
+                        else ->
+                            "<s> error: rootd not ready in time, injection failed"
+                    }
+                )
                 callback?.onProgress(stageIndex(Stage.INJECT), "failed")
                 return 4
             }
@@ -279,6 +339,25 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                     "<s> native daemon (page holder + rootd) stays resident by design, " +
                         "same as the PC reference implementation",
                 )
+                /*
+                 * KSU 接管用的是**运行时加载**（late-load）的内核模块，这个模块会一直
+                 * 留在内核里，直到**完整重启**（kernel reboot）才被卸载。
+                 *
+                 * 而「软重启」（userspace reboot / svc power reboot）只重启用户态：
+                 * 内核不动 → 模块留下，但它的用户态配套（ksud、init 时序）全没了。
+                 * 这个组合最容易在下次启动时出问题：boot 阶段的 init 碰到一个
+                 * 「状态残缺的旧模块」，可能连着崩几轮 system_server，
+                 * 表现就是「软重启成功几秒后又自动软重启」，甚至变成普通重启。
+                 *
+                 * → 明确告诉用户：接管之后要**完整重启**（adb reboot / 长按电源），
+                 *   不要用软重启收场。
+                 */
+                callback?.onLog(
+                    "<b> 提示：KSU 模块是运行时加载的，会一直留在内核里。" +
+                        "收场请用**完整重启**（adb reboot 或长按电源），" +
+                        "不要用软重启 —— 软重启会留下状态残缺的模块，" +
+                        "下次开机可能反复自动重启。",
+                )
             } else {
                 callback?.onLog(
                     "<s> warn: KSU takeover not confirmed, " +
@@ -290,6 +369,47 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             tailer.interrupt()
             tryQuietly { tailer.join(800) }
         }
+    }
+
+    /**
+     * 当前内核启动标识。/proc/sys/kernel/random/boot_id 是 0444，shell 也能读。
+     * 读不到就返回 null —— 此时不做任何拦截：宁可放行，也不能因为读不到就误伤。
+     */
+    private fun currentBootId(): String? = runCatching {
+        File("/proc/sys/kernel/random/boot_id").readText().trim()
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * boot_id 守卫：上一次喷洒之后设备没有完整重启过，就拦下本轮。
+     *
+     * 拦它的理由不是「保守」，而是确定性的：一次成功的利用必然在内核 slab 里
+     * 留下一页带内核指针的内存，那一页一旦被 cred slab 领走，就有一个 task 的
+     * uid 变成负数（Invalid userId）-> system_server 崩溃循环；而脏 cred 只有
+     * 内核重启能清，软重启和 framework 重启都清不掉。
+     */
+    private fun bootIdGuard(workDir: File, callback: ICve98260Callback?): Boolean {
+        val cur = currentBootId() ?: return true
+        val prev = runCatching {
+            File(workDir, LAST_INJECT_BOOT_ID).readText().trim()
+        }.getOrNull()
+        if (prev.isNullOrEmpty() || prev != cur) return true
+        callback?.onLog("<s> error: 上一次提权之后设备没有完整重启过（boot_id 未变）")
+        callback?.onLog(
+            "<s> 内核 slab 里可能还留着上次喷洒的脏 cred：某个 task 的 uid 变成内核" +
+                "地址的低 32 位（负 userId），AMS 一扫描就抛 IllegalArgumentException，" +
+                "system_server 会进入崩溃循环。",
+        )
+        callback?.onLog(
+            "<b> 请先**完整重启**（adb reboot / 长按电源）再跑一次。" +
+                "软重启清不掉内核 slab。",
+        )
+        return false
+    }
+
+    /** 记录「本轮已经开始喷洒」的时刻对应的 boot_id。 */
+    private fun markInjectBootId(workDir: File) {
+        val cur = currentBootId() ?: return
+        tryQuietly { File(workDir, LAST_INJECT_BOOT_ID).writeText(cur) }
     }
 
     /**
@@ -1033,13 +1153,47 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
 
     private fun waitForRootd(logFile: File, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
+        var lastLen = -1L
+        var exitedAt = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (tailContains(logFile, ROOTD_MARKER)) return true
-            if (tailContains(logFile, "cred escalation not effective") ||
-                tailContains(logFile, "binding failed") ||
-                tailContains(logFile, "listen failed")
-            ) {
-                return false
+            /*
+             * 日志文件没变长就不重扫。tailContains 每次要读 4 MB 尾巴
+             * （TAIL_SCAN_MAX），400 ms 一轮、300 s 超时 = 几百 MB 的重复 IO，
+             * 白烧在 Shizuku 服务进程上。
+             */
+            val len = logFile.length()
+            if (len != lastLen) {
+                lastLen = len
+                if (tailContains(logFile, ROOTD_MARKER)) return true
+                /* 原生体自己放弃：立刻返回，别空等满 300 s。 */
+                if (tailContains(logFile, FAILED_MARKER)) return false
+                if (tailContains(logFile, "cred escalation not effective") ||
+                    tailContains(logFile, "binding failed") ||
+                    tailContains(logFile, "listen failed")
+                ) {
+                    return false
+                }
+            }
+            /*
+             * 原生体进程退出**不能**立刻当成失败。
+             *
+             * 宿主是用 --daemon-exit 启动它的：**成功路径里主进程本来就会正常
+             * 退出**（rootd 是 cred child 的孙进程，还在跑）。rootd 写就绪
+             * 标记与主进程退出是并行的两条线，中间有几十毫秒的窗口 ——
+             * 一见进程退出就判失败，会把「已经提权成功」误报成失败。
+             *
+             * 所以：进程退出后进入宽限期，期间继续等 rootd 标记；宽限期过了
+             * 还没有标记，才认定原生体真的崩了。
+             */
+            val proc = exploitProcess
+            if (proc != null && !proc.isAlive) {
+                if (exitedAt == 0L) {
+                    exitedAt = System.currentTimeMillis()
+                } else if (System.currentTimeMillis() - exitedAt > EXIT_GRACE_MS) {
+                    return false
+                }
+            } else {
+                exitedAt = 0L
             }
             Thread.sleep(400)
         }
@@ -1084,15 +1238,18 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
      */
     private fun resolveKsud(workDir: File, callback: ICve98260Callback?): File? {
         //
-        // 内置 ksud **永远**先解压，并且是**首选候选**：
-        //   6402736 B，sha256 049491e2b4cc0a6c...，版本串 32680 / 3.3.1
-        //   —— 与设备上那个 KSU 管理器 v3.3.1 (32680-5) **同版本**，late-load
-        //   才加载得动（2026-10-31 真机：late-load 成功、模块注册成功）。
+        // 候选优先级（v2.2.0 修正）：**优先用设备管理器自带的 ksud**，内置
+        // assets/ksu/ksud（stock KernelSU 3.3.1）退居其后作自动兜底。
+        //   · 接管 late-load 装进内核的是「这个 ksud 里内嵌的模块」；要装成与
+        //     设备上已装管理器**同源**的模块，管理器才认得出提权状态、并在未授权
+        //     uid execve su 时弹授权框。SukiSU Ultra / KernelSU Next 等 fork 与
+        //     stock KernelSU 的 superkey/模块 ABI 不兼容——旧实现固定首选内置
+        //     stock 模块，导致「SukiSU 不识别 root、也不弹窗」（此前那两项诉求）。
+        //   · 内置 ksud 仍被解压到 workDir/ksud，作为原生 find_ksud 候选阶梯的
+        //     原生 find_ksud 候选阶梯第 2 位：万一某个管理器里是只认 -h/-V 的陈旧 ksud（2026-10-31 真机教训：
+        //     「模块加载了但没有 su」），late-load 空转后会自动回落到内置那个。
         //
-        // 2026-10-31 真机教训：管理器里的 libksud.so（4990848 B）是个只认
-        // -h/-V 的陈旧构建，late-load 只会打印一段帮助后退出 —— 拿它当首选就
-        // 会得到「模块加载了但没有 su」。它仍会被暂存到 /data/local/tmp/ksud，
-        // 作为原生候选阶梯里的**兜底**。
+        // 多管理器：装了多个时优先取用户经 setManagerPackage 选定的包名。
         //
         val bundled = extractKsud(workDir)
         if (bundled != null) {
@@ -1101,7 +1258,20 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             )
         }
         var staged: File? = null
-        val scanned = runCatching { KsudStage.scanManagerLib(context.packageManager) }.getOrNull()
+        val pm = context.packageManager
+        val scanStart = System.currentTimeMillis()
+        val scanned = runCatching {
+            val sel = selectedManager
+            if (!sel.isNullOrBlank())
+                KsudStage.scanManagerLibFor(pm, sel) ?: KsudStage.scanManagerLib(pm)
+            else
+                KsudStage.scanManagerLib(pm)
+        }.getOrNull()
+        /*
+         * 扫描耗时必须打出来：这一段曾经稳定卡 108 秒（已知包名早已命中，却因为
+         * 走全量扫包才返回），提权链路在这段时间里完全空转。
+         */
+        callback?.onLog("<s> ksud PM scan: ${System.currentTimeMillis() - scanStart} ms")
         if (scanned != null) {
             val (lib, pkg) = scanned
             staged = runCatching {
@@ -1112,7 +1282,7 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             }.getOrNull()
             if (staged != null && staged.length() > 0L) {
                 callback?.onLog(
-                    "<s> manager ksud staged as fallback candidate [$pkg]: ${staged.absolutePath} " +
+                    "<s> manager ksud staged as primary candidate [$pkg]: ${staged.absolutePath} " +
                         "(size=${staged.length()})",
                 )
             } else {
@@ -1122,39 +1292,65 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             callback?.onLog("<s> no manager with ksud found via PackageManager (incl. obfuscated forks); trying script")
         }
 
-        val scriptOutcome = runCatching {
-            val out = File(workDir, "ksud_stage.out").apply { delete() }
-            val pb = ProcessBuilder("/system/bin/sh", "-c", KsudStage.SCRIPT)
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.appendTo(out))
-            val p = pb.start()
-            if (!p.waitFor(20, TimeUnit.SECONDS)) {
-                Log.w(TAG, "ksud stage timed out; falling back to bundled ksud")
-                callback?.onLog("<s> warn: ksud stage timeout, using bundled ksud")
-                return@runCatching null
-            }
-            KsudStage.parse(runCatching { out.readText() }.getOrDefault(""))
-        }.getOrNull()
-
-        when (scriptOutcome) {
-            is KsudStage.Outcome.Ok -> {
-                val f = File(KsudStage.TARGET)
-                if (f.isFile && f.length() > 0L) {
-                    f.setExecutable(true, false)
-                    staged = f
-                    callback?.onLog(
-                        "<s> ksud staged via script: md5=${scriptOutcome.md5} size=${scriptOutcome.size}",
-                    )
-                } else {
-                    callback?.onLog("<s> warn: ksud stage reported ok but file missing; using bundled")
+        /*
+         * 只有 **PM 真的落盘了** 才跳过 shell 脚本。
+         *
+         * 之前用的是 `scanned != null`（PM 扫到了文件）—— 但拷到
+         * KsudStage.TARGET 那一步可能失败（目录不可写、权限被拒、拷贝中断）。
+         * 那种情况下 staged 仍是 null，而脚本那一路是**唯一的救生索**：
+         * 跳过它就只剩内置 ksud（KMI 集冻结在打包时刻），装进去的模块与设备上
+         * 已装管理器不同源 → 管理器不认这个 root、也不弹授权框 → 「提权失败」。
+         *
+         * 所以判据必须是 staged != null（文件确实落到磁盘上）。
+         */
+        val scriptOutcome: KsudStage.Outcome? = if (staged != null) {
+            null
+        } else {
+            runCatching {
+                val out = File(workDir, "ksud_stage.out").apply { delete() }
+                val pb = ProcessBuilder("/system/bin/sh", "-c", KsudStage.SCRIPT)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.appendTo(out))
+                val p = pb.start()
+                if (!p.waitFor(20, TimeUnit.SECONDS)) {
+                    Log.w(TAG, "ksud stage timed out; falling back to bundled ksud")
+                    callback?.onLog("<s> warn: ksud stage timeout, using bundled ksud")
+                    return@runCatching null
                 }
-            }
-            is KsudStage.Outcome.Fail ->
-                callback?.onLog("<s> warn: ksud stage fail (${scriptOutcome.reason}); using bundled ksud")
-            null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
+                KsudStage.parse(runCatching { out.readText() }.getOrDefault(""))
+            }.getOrNull()
         }
 
-        return bundled ?: staged
+        if (staged != null) {
+            callback?.onLog("<s> skip ksud shell stage: PackageManager scan already located ksud")
+        } else {
+            if (scanned != null) {
+                callback?.onLog(
+                    "<s> warn: manager ksud found but not staged; falling back to shell stage",
+                )
+            }
+            when (scriptOutcome) {
+                is KsudStage.Outcome.Ok -> {
+                    val f = File(KsudStage.TARGET)
+                    if (f.isFile && f.length() > 0L) {
+                        f.setExecutable(true, false)
+                        staged = f
+                        callback?.onLog(
+                            "<s> ksud staged via script: md5=${scriptOutcome.md5} size=${scriptOutcome.size}",
+                        )
+                    } else {
+                        callback?.onLog("<s> warn: ksud stage reported ok but file missing; using bundled")
+                    }
+                }
+                is KsudStage.Outcome.Fail ->
+                    callback?.onLog("<s> warn: ksud stage fail (${scriptOutcome.reason}); using bundled ksud")
+                null -> callback?.onLog("<s> warn: ksud stage error; using bundled ksud")
+            }
+        }
+
+        // 优先返回设备管理器的 ksud（让加载的模块与已装管理器同源），
+        // 内置 stock-KSU ksud 作自动兜底（原生 find_ksud 仍把它列为第 2 候选）。
+        return staged ?: bundled
     }
 
     /** 从 assets/ksu/ksud 解压可执行文件；不存在返回 null。 */
@@ -1172,25 +1368,65 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     }
 
     /**
-     * 载入机型配置（`assets/device_profiles/<product>-<device>.conf`）。
+     * 载入机型配置（`assets/device_profiles/`）—— **加速层**，没有它照样能跑。
      *
-     * 找不到就是 null —— 机型配置是**加速层**，没有它照样能跑（退回全量运行时扫描）。
-     * 回退顺序：`<product>-<device>.conf` → `<product>.conf`。
+     * 两级回落，**字段级**合并：
+     *  - **专属**：`<product>-<device>.conf`（这台机器特有）；
+     *  - **通用**：`<product>.conf`（家族共用，专属没写的字段由它补齐）。
+     *
+     * 两份都没有 → null（退回 calibrate-b 运行时全量扫描）。
      */
     private fun loadDeviceProfile(): DeviceProfile? {
         val product = Build.PRODUCT?.trim().orEmpty()
         val device = Build.DEVICE?.trim().orEmpty()
-        if (product.isEmpty() || device.isEmpty()) return null
-        for (id in listOf("$product-$device", product)) {
-            val text = runCatching {
-                context.assets.open("device_profiles/$id.conf").use { input ->
-                    input.readBytes().toString(Charsets.UTF_8)
-                }
-            }.getOrNull() ?: continue
-            val profile = DeviceProfile.parse(id, text)
-            if (profile != null) return profile
+        if (product.isEmpty()) return null
+
+        val generic = readDeviceProfile(product, product, device, allowMissingDevice = true)
+        val specific =
+            if (device.isEmpty()) null
+            else readDeviceProfile("$product-$device", product, device)
+        val merged = DeviceProfile.merge(generic, specific)
+        if (merged != null) {
+            Log.i(
+                TAG,
+                "device profile ${merged.id} merged from ${merged.mergedFrom.joinToString("+")}" +
+                    (if (merged.inheritedFields.isEmpty()) "" else
+                        "; inherited from generic: ${merged.inheritedFields.joinToString(",")}"),
+            )
         }
-        return null
+        return merged
+    }
+
+    /**
+     * 读一份机型配置并校验它确实属于本机。
+     *
+     * 校验不可省：配置里的 `product` / `device` 必须与设备一致，否则宁可不加载 ——
+     * 套错机型的 page_offset 是「注入成功但偏移全错」的隐性故障。
+     */
+    private fun readDeviceProfile(
+        id: String,
+        product: String,
+        device: String,
+        allowMissingDevice: Boolean = false,
+    ): DeviceProfile? {
+        val text = runCatching {
+            context.assets.open("device_profiles/$id.conf").use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+        }.getOrNull() ?: return null
+        val profile = DeviceProfile.parse(id, text, allowMissingDevice) ?: run {
+            Log.w(TAG, "解析 device profile $id 失败")
+            return null
+        }
+        if (!DeviceProfilePolicy.belongsTo(profile, product, device)) {
+            Log.w(
+                TAG,
+                "device profile $id 不属于本机 (profile=${profile.product}/${profile.device} " +
+                    "device=$product/$device)，忽略",
+            )
+            return null
+        }
+        return profile
     }
 
     /**
@@ -1267,6 +1503,36 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     }
 
 
+    override fun setManagerPackage(pkg: String?) {
+        selectedManager = pkg?.trim()?.takeIf { it.isNotEmpty() }
+        Log.i(TAG, "selected manager package: ${selectedManager ?: "<auto>"}")
+    }
+
+    /**
+     * 枚举设备上所有携带 ksud 的 Root 管理器。
+     *
+     * 这个扫描**必须在服务侧做**：管理器的 ksud 落在**别的应用**的
+     * nativeLibraryDir（`/data/app/<pkg>/lib/arm64/`），那是别的应用的
+     * `apk_data_file`；App 进程（untrusted_app）读它会被 SELinux 拒绝，
+     * 内容签名扫描在 App 进程里恒为空 —— 界面就一直显示「未检测到管理器」。
+     * UserService 跑在 shell（uid 2000），读得到。
+     *
+     * [budgetMs] <= 0 只走已知包名快速通道（毫秒级）；> 0 时额外做一次全量
+     * 兜底扫描（能认出包名不可预知、且 ksud 被随机改名的混淆 fork）。
+     */
+    override fun listManagerPackages(budgetMs: Long): String {
+        val pm = context.packageManager
+        val libs = runCatching {
+            KsudStage.scanManagerLibs(pm, if (budgetMs > 0) budgetMs else 0L)
+        }.getOrDefault(emptyList())
+        val entries = libs.map { (file, pkg) ->
+            val version = runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+            KsudStage.ManagerEntry(pkg, version, file.absolutePath)
+        }
+        Log.i(TAG, "manager packages listed: ${entries.size} (budget=${budgetMs}ms)")
+        return KsudStage.formatManagerList(entries)
+    }
+
     override fun getKernelRelease(): String =
         runCatching { System.getProperty("os.version") ?: "unknown" }.getOrDefault("unknown")
 
@@ -1274,7 +1540,20 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
 
     override fun destroy() {
         if (!running.get()) {
-            tryQuietly { exploitProcess?.destroy() }
+            /*
+             * ⚠️ 这里**绝不能**对 exploit 父进程发信号（Process.destroy() = SIGTERM）。
+             *
+             * 父进程正是钉住那批被 UAF 回收的页的进程：杀掉它 → 页被提前释放 →
+             * 仍持有伪造 cred 的 cred 子进程 / 经 rootd 拉起的 ksud 随后踩到悬空
+             * 指针 → kernel panic → 设备重启。真机 2026-10-31 22:11 已经因此关机
+             * 过一次；当时只把 socket 清理路径改成「绝不对任何进程发信号」，
+             * destroy() 这条漏网了。
+             *
+             * 口径与 teardown 一致（见「native process stays resident ... leaving it
+             * alive is safer than freeing the borrowed cred」）：留在原地比释放
+             * 借来的 cred 安全。残留进程由 runChain 的 [4] 前置检查处理 ——
+             * 发现残留直接中止并提示重启。
+             */
             kotlin.system.exitProcess(0)
         }
     }

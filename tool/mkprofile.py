@@ -49,10 +49,18 @@ LZ4_LEGACY_MAGIC = b"\x02\x21\x4c\x18"
 GZIP_MAGIC = b"\x1f\x8b\x08"
 PAGE_SIZE = 4096
 
-# arm64 Image 的虚拟基址（kallsyms_relative_base）
+# 内核镜像虚拟基址的兜底值。真实值一律从镜像里的 kallsyms_relative_base 读出；
+# 写死会让所有「不是这个基址」的内核整体偏移（6.6 参考机之外全错）。
 KERNEL_IMAGE_BASE = 0xFFFFFFC080000000
-# arm64 Image 中，文件偏移 0x1000 对应虚拟地址 KERNEL_IMAGE_BASE
-IMAGE_TEXT_FILE_OFFSET = 0x1000
+
+# 「链接期 VA ↔ 镜像文件偏移」的换算基准：_text 落在镜像的哪个文件偏移。
+# 内核容器有两种，答案不同：
+#   - PE/COFF（高通/Xiaomi 5.15 GKI 常见）：_text 就在文件偏移 0
+#   - 裸 arm64 Image：_text 在头部页之后（0x1000）
+# 写死任何一个都会让 BL 目标整体偏移同量。实测 creek（PE 容器）：偏移取 0 时
+# BL 目标命中 kallsyms 符号 93.25%，取 0x1000 时只有 0.59%。
+# 所以这里只列候选，由 detect_text_offset() 现场实测选定。
+IMAGE_TEXT_FILE_OFFSET_CANDIDATES = (0x0, 0x1000, 0x40)
 
 
 def align_up(v, a):
@@ -592,12 +600,50 @@ def _build_symbols(img, off, num_syms, base, tokens, names_start):
     return syms
 
 
+# ---------------------------------------------------------------- 链接期地址换算
+
+def detect_text_offset(img, base, sym_vas):
+    """
+    实测「_text 位于镜像的哪个文件偏移」。
+
+    候选逐个代入，统计有多少条 BL 的目标恰好落在 kallsyms 符号地址上，
+    命中率最高的即正解。BL 是 PC 相对指令，基准错一点，命中率就塌掉。
+    """
+    vas = set(sym_vas)
+    best_off, best_hit = IMAGE_TEXT_FILE_OFFSET_CANDIDATES[0], -1
+    stats = {}
+    for cand in IMAGE_TEXT_FILE_OFFSET_CANDIDATES:
+        hit = 0
+        total = 0
+        for idx, (w,) in enumerate(struct.iter_unpack("<I", img[:0x400000])):
+            if (w & 0xFC000000) != 0x94000000:
+                continue
+            total += 1
+            if total > 40000:
+                break
+            imm = w & 0x03FFFFFF
+            if imm & 0x02000000:
+                imm -= 0x04000000
+            tgt = base + (idx * 4 - cand) + (imm << 2)
+            if tgt in vas:
+                hit += 1
+        stats[hex(cand)] = "%d/%d" % (hit, total)
+        if hit > best_hit:
+            best_hit, best_off = hit, cand
+    return best_off, stats
+
+
 # ---------------------------------------------------------------- 调用点候选
 
-def bl_sites(img, lo_file, hi_file):
+# slab 分配器：kmem_cache_alloc tracepoint 记的 call_site 就是这些函数里 BL 的返回地址
+ALLOC_SYMBOLS = ("kmem_cache_alloc", "kmem_cache_alloc_node",
+                 "kmem_cache_alloc_trace", "kmem_cache_alloc_bulk")
+
+
+def bl_sites(img, lo_file, hi_file, base, text_off):
     """
     扫出 [lo_file, hi_file) 区间内所有 BL 指令，返回 [(file_off, target_va)]。
-    VA 换算：file_off 0x1000 ↔ KERNEL_IMAGE_BASE。
+    VA 换算：file_off text_off ↔ base（base / text_off 都由镜像实测得出）。
     """
     out = []
     for foff in range(lo_file - (lo_file & 3), hi_file, 4):
@@ -609,32 +655,49 @@ def bl_sites(img, lo_file, hi_file):
         imm = w & 0x03FFFFFF
         if imm & 0x02000000:
             imm -= 0x04000000
-        va = KERNEL_IMAGE_BASE + (foff - IMAGE_TEXT_FILE_OFFSET)
+        va = base + (foff - text_off)
         out.append((foff, va + (imm << 2)))
     return out
 
 
-def candidate_sites(img, syms):
+def candidate_sites(img, syms, base, text_off):
     """
-    给出 do_timer_create / prepare_creds 内部的 BL 调用点候选。
+    给出各分配函数内部的 BL 调用点候选。
+
+    调用点 = BL 的下一条指令（kmem_cache_alloc tracepoint 记的是 _RET_IP_）；
+    alloc_call_sites 只保留目标是 slab 分配器的那些。
     运行时用真实 trace 的 call_site 反查，命中即为该函数的分配调用点。
     """
     res = {}
-    for fn in ("do_timer_create", "prepare_creds", "copy_process"):
+    vas = sorted(syms.values())
+    by_va = {}
+    for name, va in syms.items():
+        by_va.setdefault(va, name)
+    for fn in ("do_timer_create", "prepare_creds", "dup_task_struct", "copy_process"):
         a = syms.get(fn)
         if a is None:
             continue
-        fstart = a - KERNEL_IMAGE_BASE + IMAGE_TEXT_FILE_OFFSET
-        sites = bl_sites(img, fstart, min(fstart + 0x600, len(img)))
-        # 调用点 = BL 的下一条指令（tracepoint 记的是 _RET_IP_）
-        call_sites, targets = [], {}
+        # 函数长度：kallsyms 不带 size，用下一个符号地址估（够用：只需覆盖函数体）
+        end = a + 0x600
+        for v in vas:
+            if v > a:
+                end = v
+                break
+        fstart = a - base + text_off
+        fend = end - base + text_off
+        sites = bl_sites(img, fstart, min(fend, len(img)), base, text_off)
+        call_sites, alloc_sites, targets = [], [], {}
         for foff, tgt in sites:
-            site_va = KERNEL_IMAGE_BASE + (foff - IMAGE_TEXT_FILE_OFFSET)
-            call_sites.append(site_va + 4)
-            targets[hex(site_va + 4)] = hex(tgt)
+            site_va = base + (foff - text_off) + 4
+            call_sites.append(site_va)
+            targets[hex(site_va)] = hex(tgt)
+            if by_va.get(tgt) in ALLOC_SYMBOLS:
+                alloc_sites.append(site_va)
         res[fn] = {
             "func_va": a,
+            "func_end_va": end,
             "call_sites": call_sites,
+            "alloc_call_sites": alloc_sites,
             "bl_targets": targets,
         }
     return res
@@ -670,7 +733,8 @@ def build_profile(boot_path):
             kit_node = it_off + node_off
 
     syms, base, num_syms = extract_kallsyms(img)
-    cands = candidate_sites(img, syms)
+    text_off, text_stats = detect_text_offset(img, base, syms.values())
+    cands = candidate_sites(img, syms, base, text_off)
 
     off = {
         "task_cred": ts_m.get("cred"),
@@ -694,8 +758,36 @@ def build_profile(boot_path):
     def s64(v):
         return v - (1 << 64) if v >= (1 << 63) else v
 
-    off["timer_link"] = s64(syms["do_timer_create"])
-    off["cred_link"] = s64(syms["prepare_creds"])
+    # 分配调用点：kmem_cache_alloc tracepoint 记的 _RET_IP_ = BL 的下一条指令。
+    # 写函数基址是错的 —— trace 里记的是调用点，拿基址去过滤永远匹配不上。
+    anchor_notes = []
+    anchors = {}
+    for fn, key in (("do_timer_create", "timer_link"), ("prepare_creds", "cred_link")):
+        sites = (cands.get(fn) or {}).get("alloc_call_sites") or []
+        if len(sites) == 1:
+            anchors[key] = sites[0]
+        else:
+            anchors[key] = syms.get(fn)
+            if len(sites) > 1:
+                anchor_notes.append("%s 内有 %d 个分配调用点，未自动判定" % (fn, len(sites)))
+    # task_struct 的 slab 分配点：5.15 在 dup_task_struct 里，6.6 把 dup_task_struct
+    # 内联进了 copy_process，两个都要试。
+    task_sites = (cands.get("dup_task_struct") or {}).get("alloc_call_sites") or []
+    cp_sites = (cands.get("copy_process") or {}).get("alloc_call_sites") or []
+    if len(task_sites) == 1:
+        anchors["task_alloc_link"] = task_sites[0]
+    elif len(cp_sites) == 1:
+        anchors["task_alloc_link"] = cp_sites[0]
+    elif task_sites or cp_sites:
+        anchor_notes.append("task_struct 分配调用点不唯一，未写入 task_alloc_link")
+
+    if not anchors["timer_link"] or not anchors["cred_link"]:
+        raise SystemExit("kallsyms 里缺少 do_timer_create / prepare_creds，无法生成 profile")
+
+    off["timer_link"] = s64(anchors["timer_link"])
+    off["cred_link"] = s64(anchors["cred_link"])
+    if "task_alloc_link" in anchors:
+        off["task_alloc_link"] = s64(anchors["task_alloc_link"])
     off["selinux_link"] = s64(syms["selinux_state"])
     off["user_ns"] = s64(syms["init_user_ns"])
     off["root_user"] = s64(syms["root_user"])
@@ -710,6 +802,9 @@ def build_profile(boot_path):
         "image_bytes": len(img),
         "kallsyms_base": base,
         "kallsyms_num_syms": num_syms,
+        "text_file_offset": text_off,
+        "text_offset_stats": text_stats,
+        "anchor_notes": anchor_notes,
         "btf_offset": btf_off,
         "offsets": off,
         "candidates": cands,
@@ -737,6 +832,14 @@ def extract_release(img):
 
 def render_conf(p, page_offset=-551903297536):
     o = p["offsets"]
+    notes = (
+        "BTF 驱动生成；kitimer_size/kitimer_node/cred 布局按本机 BTF 校正；"
+        "timer_link/cred_link/task_alloc_link 取本镜像内 kmem_cache_alloc 调用点的返回地址"
+        "（BL+4，即 tracepoint 记的 _RET_IP_），不是函数基址；"
+        "page_offset 是兜底值，以 calibrate-b 运行时扫描结果为准"
+    )
+    if p.get("anchor_notes"):
+        notes += "；" + "；".join(p["anchor_notes"])
     lines = [
         "{",
         f'  release = "{p["release"]}"',
@@ -750,7 +853,7 @@ def render_conf(p, page_offset=-551903297536):
               "cred_cap_bset", "cred_cap_ambient", "cred_security", "cred_user",
               "cred_user_ns", "cred_ucounts", "cred_groups", "kitimer_size",
               "kitimer_node", "timer_link", "cred_link", "selinux_link",
-              "user_ns", "root_user", "groups", "ucounts"):
+              "user_ns", "root_user", "groups", "ucounts", "task_alloc_link"):
         if o.get(k) is not None:
             lines.append(f"    {k} = {o[k]}")
     lines += [
@@ -758,9 +861,7 @@ def render_conf(p, page_offset=-551903297536):
         f'  _source = "img:{p["meta"].get("source", "boot.img")}"',
         f'  _image_sha256 = "{p["image_sha256"]}"',
         f'  _boot_img_sha256 = "{p["boot_sha256"]}"',
-        '  _notes = "BTF 驱动生成；kitimer_size/kitimer_node 已按本机 BTF 校正；'
-        'page_offset 取自 vendor_boot 设备树 /memory 节点 base=0（4K 页 PAGE_OFFSET=0xffffff8000000000）；'
-        '它只是兜底值，以 calibrate-b 运行时扫描结果为准"',
+        f'  _notes = "{notes}"',
         "}",
     ]
     return "\n".join(lines) + "\n"
@@ -785,13 +886,11 @@ def render_json(p, page_offset=-551903297536):
             "cred_cap_bset", "cred_cap_ambient", "cred_security", "cred_user",
             "cred_user_ns", "cred_ucounts", "cred_groups", "kitimer_size",
             "kitimer_node", "timer_link", "cred_link", "selinux_link",
-            "user_ns", "root_user", "groups", "ucounts") if o.get(k) is not None},
+            "user_ns", "root_user", "groups", "ucounts", "task_alloc_link") if o.get(k) is not None},
         "_source": "img:" + p["meta"].get("source", "boot.img"),
         "_image_sha256": p["image_sha256"],
         "_boot_img_sha256": p["boot_sha256"],
-        "_notes": ("BTF 驱动生成；kitimer_size/kitimer_node 已按本机 BTF 校正；"
-                   "page_offset 取自 vendor_boot 的 /memory 节点 base=0（4K 页 PAGE_OFFSET=0xffffff8000000000）；"
-                   "它只是兜底值，calibrate-b 运行时扫描出的结果优先"),
+        "_notes": notes,
     }
     return _json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
@@ -813,25 +912,29 @@ def main():
     p["meta"]["source"] = args.boot_img.split("/")[-1]
 
     conf_path = args.out or (p["release"] + ".conf")
-    open(conf_path, "w").write(render_conf(p, args.page_offset))
+    with open(conf_path, "w", encoding="utf-8") as f:
+        f.write(render_conf(p, args.page_offset))
     print(f"[+] release      : {p['release']}")
     print(f"[+] kernel sha256: {p['image_sha256']}")
     print(f"[+] BTF @0x{p['btf_offset']:x}   kallsyms base=0x{p['kallsyms_base']:x} "
-          f"syms={p['kallsyms_num_syms']}")
+          f"syms={p['kallsyms_num_syms']} text_off=0x{p['text_file_offset']:x} "
+          f"{p['text_offset_stats']}")
     print(f"[+] sizeof(k_itimer)={p['offsets']['kitimer_size']} "
           f"kitimer_node=0x{p['offsets']['kitimer_node']:x} "
           f"sizeof(cred)={p['offsets']['cred_size']}")
     print(f"[+] wrote {conf_path}")
     if args.json_out:
-        json.dump(p, open(args.json_out, "w"), indent=2)
+        with open(args.json_out, "w", encoding="utf-8") as f:
+            json.dump(p, f, indent=2, ensure_ascii=False)
         print(f"[+] wrote {args.json_out}")
     if args.profile_json_out:
-        open(args.profile_json_out, "w").write(render_json(p, args.page_offset))
+        with open(args.profile_json_out, "w", encoding="utf-8") as f:
+            f.write(render_json(p, args.page_offset))
         print(f"[+] wrote {args.profile_json_out}")
     if args.kallsyms_out:
         # 原生体（slide_resolve）需要「函数名 → 未重定位 VA」的映射，
         # 形如 "0xffffffc08021104c do_timer_create"，按 VA 升序。
-        with open(args.kallsyms_out, "w") as f:
+        with open(args.kallsyms_out, "w", encoding="utf-8") as f:
             for name, va in sorted(p["all_symbols"].items(), key=lambda kv: kv[1]):
                 f.write("0x%x %s\n" % (va, name))
         print(f"[+] wrote {args.kallsyms_out} ({len(p['all_symbols'])} symbols)")

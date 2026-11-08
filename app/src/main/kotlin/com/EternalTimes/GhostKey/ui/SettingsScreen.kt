@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.EternalTimes.GhostKey.ui.theme.CvePalette
 import com.EternalTimes.GhostKey.viewmodel.ExploitViewModel
+import com.EternalTimes.GhostKey.viewmodel.ManagerOption
 
 /**
  * 设置页：内核 Profile 选择 / 导入（IMG·JSON·HOCON）/ 导出（文件名含版本号）/
@@ -57,6 +58,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showProfilePicker by remember { mutableStateOf(false) }
+    var showManagerPicker by remember { mutableStateOf(false) }
     var pendingExport by remember { mutableStateOf("") }
 
     val imgPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -215,29 +217,71 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Root 管理器（自动适配）") {
+                val cands = uiState.managerCandidates
+                /*
+                 * 检测是异步的，首屏拿到的是「还没扫完」的中间态。
+                 * 不区分「还在查」和「查了没有」，用户会把前者读成后者，
+                 * 于是以为「检测不到管理器」。
+                 */
+                val scanning = uiState.managerScanning
                 Text(
-                    "检测到：${uiState.detectedManager.ifBlank { "未检测到" }}",
-                    color = CvePalette.TextPrimary,
+                    "检测到：" + when {
+                        scanning -> "检测中…"
+                        uiState.managerScanError.isNotBlank() -> "检测失败（${uiState.managerScanError}）"
+                        else -> uiState.detectedManager.ifBlank { "未检测到" }
+                    },
+                    color = if (uiState.managerScanError.isNotBlank() && !scanning) {
+                        CvePalette.Warning
+                    } else {
+                        CvePalette.TextPrimary
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "KSU 来源：${uiState.ksuSourceLabel.ifBlank { "内置 ksud" }}",
+                    "KSU 来源：" + when {
+                        scanning -> "检测中…"
+                        else -> uiState.ksuSourceLabel.ifBlank { "内置 ksud" }
+                    },
                     color = CvePalette.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                OutlinedButton(onClick = { viewModel.detectKsuSource() }) {
-                    Text("重新检测")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { viewModel.detectKsuSource(force = true) }) {
+                        Text("重新检测")
+                    }
+                    if (cands.size > 1) {
+                        Button(onClick = { showManagerPicker = true }) {
+                            Text("选择管理器")
+                        }
+                    }
                 }
-                Text(
-                    "提权时优先从上面检测到的管理器提取 ksud（认 libksud.so 文件，任何 fork 均可命中），" +
-                        "未检测到才回落 APK 内置 ksud。管理器升级即获得新内核 KMI 支持，无需更新本应用。",
-                    color = CvePalette.TextMuted,
-                    style = MaterialTheme.typography.labelSmall,
-                )
+                if (cands.size > 1) {
+                    Text(
+                        "当前选择：" + (uiState.selectedManagerPackage ?: "自动（优先级首个）"),
+                        color = CvePalette.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "检测到 ${cands.size} 个管理器。接管会加载所选管理器自带的 ksud，" +
+                            "使内核模块与已装管理器同源（否则部分管理器不识别提权、也不弹授权框）。",
+                        color = CvePalette.TextMuted,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                } else {
+                    Text(
+                        "提权时优先从上面检测到的管理器提取 ksud（按内容特征识别，改名或二次打包也能命中），" +
+                            "未检测到才回落 APK 内置 ksud。管理器升级即获得新内核 KMI 支持，无需更新本应用。",
+                        color = CvePalette.TextMuted,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
 
             SettingsCard(title = "日志") {
-                val runCount = remember { viewModel.listRunLogs().size }
+                /* 次数由 ViewModel 持有并随增删刷新；之前这里用
+                   remember { viewModel.listRunLogs().size }，只算一次且在主线程做磁盘 IO，
+                   跑完一轮 ROOT 回来看到的还是旧数字。 */
+                val runCount = uiState.runLogCount
                 OutlinedButton(onClick = onOpenLogs) {
                     Text("查看运行记录（$runCount 次）")
                 }
@@ -259,6 +303,18 @@ fun SettingsScreen(
                 showProfilePicker = false
             },
             onDismiss = { showProfilePicker = false },
+        )
+    }
+
+    if (showManagerPicker) {
+        ManagerPickerDialog(
+            options = uiState.managerCandidates,
+            selected = uiState.selectedManagerPackage,
+            onPick = { pkg ->
+                viewModel.selectManager(pkg)
+                showManagerPicker = false
+            },
+            onDismiss = { showManagerPicker = false },
         )
     }
 }
@@ -305,6 +361,61 @@ private fun ProfilePickerDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onPick(opt) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (isSelected) "●" else "○",
+                            color = if (isSelected) CvePalette.Accent else CvePalette.TextMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            label,
+                            color = CvePalette.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    HorizontalDivider(color = CvePalette.Outline, thickness = 1.dp)
+                }
+            }
+        },
+        containerColor = CvePalette.Surface,
+    )
+}
+
+/** 多管理器选择弹窗：null = 自动（优先级首个），否则按选中包名接管。 */
+@Composable
+private fun ManagerPickerDialog(
+    options: List<ManagerOption>,
+    selected: String?,
+    onPick: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val rows = listOf<ManagerOption?>(null) + options
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = CvePalette.TextMuted)
+            }
+        },
+        title = {
+            Text("选择接管用的 Root 管理器", color = CvePalette.TextPrimary)
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                rows.forEach { opt ->
+                    val pkg = opt?.packageName
+                    val isSelected = pkg == selected
+                    val label = opt?.label ?: "自动（优先级首个）"
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(pkg) }
                             .padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

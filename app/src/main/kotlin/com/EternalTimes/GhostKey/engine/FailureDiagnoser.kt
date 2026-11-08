@@ -120,7 +120,29 @@ object FailureDiagnoser {
                 ),
             )
         },
-        Rule("inject", Regex("rootd not ready in time")) {
+        Rule(null, Regex("C98260_EXPLOIT_FAILED=1|exploit gave up before rootd")) {
+            Diagnosis(
+                stage = "inject",
+                title = "利用链主动放弃：本轮没能拿到可用的 UAF 窗口，已提前收手",
+                causes = listOf(
+                    "内核的 mm_page_alloc/mm_page_free 事件没开火，页回收过程无法自检（判定不可信）",
+                    "受害者页没有被重新分配：竞态窗口没命中（内核可能对该漏洞做了部分回移植补丁）",
+                    "本机内核的 tracefs 事件组与预期不同，页过滤与命中判定全部失效",
+                ),
+                suggestions = listOf(
+                    "重启设备后再试 1~2 次（竞态窗口与内存布局每次开机都不同）",
+                    "保存「运行日志」页的完整内容，便于定位内核适配问题",
+                ),
+            )
+        },
+        /*
+         * 下面两条的 stage 约束是 null（不限阶段）。
+         *
+         * 原因：宿主拼出来的错误行是「<s> error: ...」，**没有 [stage] 前缀**，
+         * 而归因器是从行首的方括号里提取阶段的 —— 阶段为 null 时，带阶段
+         * 约束的规则永远匹配不上，于是真机上只能落到「未命中已知失败模式」。
+         */
+        Rule(null, Regex("rootd not ready in time")) {
             Diagnosis(
                 stage = "inject",
                 title = "漏洞已触发但 root 通道未建立：rootd 超时未就绪",
@@ -134,7 +156,7 @@ object FailureDiagnoser {
                 ),
             )
         },
-        Rule("inject", Regex("kernel offset table not loaded|profile")) {
+        Rule(null, Regex("kernel offset table not loaded|no matching kernel profile found|profile.*字段")) {
             Diagnosis(
                 stage = "inject",
                 title = "内核偏移表未加载：注入缺少 profile 数据",

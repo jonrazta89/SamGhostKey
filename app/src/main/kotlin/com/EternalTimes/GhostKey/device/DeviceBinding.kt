@@ -152,4 +152,12 @@ object DeviceBinding {
     /** 当前设备描述，用于日志与提示。 */
     fun describe(): String =
         "${Build.MANUFACTURER} ${Build.MODEL} (product=${Build.PRODUCT}, device=${Build.DEVICE}, kernel=${readKernelRelease()})"
+
+    /**
+     * 当前机型的 `product-device` 标识（与 device_profiles 的文件名同构，如 `madrid-madrid`）。
+     *
+     * 用于「内核 profile 的机型一致性校验」：内核 profile 按 `uname -r` 匹配，
+     * 但结构体偏移来自 BTF，跨机型不能套用。
+     */
+    fun productDevice(): String = "${Build.PRODUCT}-${Build.DEVICE}"
 }
