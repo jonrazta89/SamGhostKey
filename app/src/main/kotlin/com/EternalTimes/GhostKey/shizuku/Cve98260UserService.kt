@@ -232,7 +232,11 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             val pageOffsetPlan = DeviceProfilePolicy.planPageOffset(deviceProfile, runtimePageSize())
             callback?.onLog(
                 if (deviceProfile != null) {
-                    "<s> device profile ${deviceProfile.id}: ${pageOffsetPlan.reason}"
+                    "<s> device profile ${deviceProfile.id}" +
+                        " [${deviceProfile.mergedFrom.joinToString("+")}]" +
+                        (if (deviceProfile.inheritedFields.isEmpty()) "" else
+                            " inherited=${deviceProfile.inheritedFields.joinToString(",")}") +
+                        ": ${pageOffsetPlan.reason}"
                 } else {
                     "<s> no device profile for ${Build.PRODUCT}/${Build.DEVICE}: running calibrate-b"
                 },
@@ -1364,25 +1368,65 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
     }
 
     /**
-     * 载入机型配置（`assets/device_profiles/<product>-<device>.conf`）。
+     * 载入机型配置（`assets/device_profiles/`）—— **加速层**，没有它照样能跑。
      *
-     * 找不到就是 null —— 机型配置是**加速层**，没有它照样能跑（退回全量运行时扫描）。
-     * 回退顺序：`<product>-<device>.conf` → `<product>.conf`。
+     * 两级回落，**字段级**合并：
+     *  - **专属**：`<product>-<device>.conf`（这台机器特有）；
+     *  - **通用**：`<product>.conf`（家族共用，专属没写的字段由它补齐）。
+     *
+     * 两份都没有 → null（退回 calibrate-b 运行时全量扫描）。
      */
     private fun loadDeviceProfile(): DeviceProfile? {
         val product = Build.PRODUCT?.trim().orEmpty()
         val device = Build.DEVICE?.trim().orEmpty()
-        if (product.isEmpty() || device.isEmpty()) return null
-        for (id in listOf("$product-$device", product)) {
-            val text = runCatching {
-                context.assets.open("device_profiles/$id.conf").use { input ->
-                    input.readBytes().toString(Charsets.UTF_8)
-                }
-            }.getOrNull() ?: continue
-            val profile = DeviceProfile.parse(id, text)
-            if (profile != null) return profile
+        if (product.isEmpty()) return null
+
+        val generic = readDeviceProfile(product, product, device, allowMissingDevice = true)
+        val specific =
+            if (device.isEmpty()) null
+            else readDeviceProfile("$product-$device", product, device)
+        val merged = DeviceProfile.merge(generic, specific)
+        if (merged != null) {
+            Log.i(
+                TAG,
+                "device profile ${merged.id} merged from ${merged.mergedFrom.joinToString("+")}" +
+                    (if (merged.inheritedFields.isEmpty()) "" else
+                        "; inherited from generic: ${merged.inheritedFields.joinToString(",")}"),
+            )
         }
-        return null
+        return merged
+    }
+
+    /**
+     * 读一份机型配置并校验它确实属于本机。
+     *
+     * 校验不可省：配置里的 `product` / `device` 必须与设备一致，否则宁可不加载 ——
+     * 套错机型的 page_offset 是「注入成功但偏移全错」的隐性故障。
+     */
+    private fun readDeviceProfile(
+        id: String,
+        product: String,
+        device: String,
+        allowMissingDevice: Boolean = false,
+    ): DeviceProfile? {
+        val text = runCatching {
+            context.assets.open("device_profiles/$id.conf").use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+        }.getOrNull() ?: return null
+        val profile = DeviceProfile.parse(id, text, allowMissingDevice) ?: run {
+            Log.w(TAG, "解析 device profile $id 失败")
+            return null
+        }
+        if (!DeviceProfilePolicy.belongsTo(profile, product, device)) {
+            Log.w(
+                TAG,
+                "device profile $id 不属于本机 (profile=${profile.product}/${profile.device} " +
+                    "device=$product/$device)，忽略",
+            )
+            return null
+        }
+        return profile
     }
 
     /**

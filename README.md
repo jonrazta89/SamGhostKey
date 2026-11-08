@@ -103,6 +103,8 @@
 
 已内置、待真机回归：POCO M7（代号 **creek** / HyperOS 3.0.304.0.WBOMIXM / `5.15.194-android13-8-00019-gf4321180a397-ab15212794`）。
 
+机型配置分两层，**字段级**回落：`<product>-<device>.conf` 是机型专属（只写这台机器特有的项），`<product>.conf` 是家族通用（专属没写的字段由它补齐，通用层可不写 `device`，覆盖整个家族）。宿主加载时会校验配置里的 product/device 与本机一致，不一致直接拒用（套错机型的 page_offset = 「注入成功但偏移全错」）；`page_offset_trusted` 未置 1 前一律走 calibrate-b 运行时扫描，行为与「没有这份配置」完全一致。POCO M7 两层目前都是**待实测初版**（`creek.conf` 家族通用 + `creek-creek.conf` 机型专属）。
+
 给新设备生成 profile（离线、纯标准库、不需 root）：
 
 ```bash
