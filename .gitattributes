@@ -1,15 +1,27 @@
 # 统一文本文件规范化，避免跨平台（Windows/macOS/Linux）克隆时出现行尾“假脏”
-* text=auto
+#
+# 约束：仓库内一律存 LF，检出到工作区也一律为 LF（eol=lf），
+# 这样 Windows 与 macOS 两侧工作区字节完全一致，diff 干净，
+# 也不会出现「Windows 上改一行、macOS 上整文件全变」的噪声。
+# 例外：Windows 批处理与 PowerShell 脚本需 CRLF 才能被 cmd.exe / powershell 正确解析。
+* text=auto eol=lf
 
 # 构建/脚本类文件按平台约定强制换行
 *.bat text eol=crlf
+*.cmd text eol=crlf
 *.ps1 text eol=crlf
 *.sh text eol=lf
+
+# Gradle wrapper 启动脚本：必须保持 LF，且需可执行位（git update-index --chmod=+x gradlew），
+# 否则换机克隆后 ./gradlew 会直接 Permission denied
+gradlew text eol=lf
 
 # 明确按二进制处理，避免误判为文本导致损坏
 *.keystore binary
 *.jks binary
 *.p12 binary
+*.jar binary
 *.png binary
 *.jpg binary
 *.webp binary
+app/src/main/assets/ksu/ksud binary
