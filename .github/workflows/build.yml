@@ -19,7 +19,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -54,14 +54,14 @@ jobs:
           CVE98260_KEY_PASSWORD: ${{ secrets.CVE98260_KEY_PASSWORD }}
 
       - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: GhostKey-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
       - name: Upload Release APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: GhostKey-release
           path: app/build/outputs/apk/release/*.apk
@@ -76,13 +76,13 @@ jobs:
       contents: write
     steps:
       - name: Download Debug APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: GhostKey-debug
           path: artifacts/debug
 
       - name: Download Release APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: GhostKey-release
           path: artifacts/release
@@ -109,9 +109,9 @@ jobs:
             ### Usage
             1. Install APK on target device
             2. Grant Shizuku permission
-            3. Ensure KernelSU/KSU Next/SukiSU is installed
-            4. Import kernel profile (Settings → Import JSON)
-            5. Tap "Start Exploit"
+            2. Ensure KernelSU/KSU Next/SukiSU is installed
+            3. Import kernel profile (Settings → Import JSON)
+            4. Tap "Start Exploit"
           draft: false
           prerelease: false
           files: |
