@@ -35,7 +35,7 @@ jobs:
             platform-tools
             platforms;android-37
             build-tools;35.0.0
-            ndk;27.2.12479018
+            ndk;27.0.12077973
             cmake;3.22.1
 
       - name: Configure Gradle
@@ -109,9 +109,9 @@ jobs:
             ### Usage
             1. Install APK on target device
             2. Grant Shizuku permission
-            2. Ensure KernelSU/KSU Next/SukiSU is installed
-            3. Import kernel profile (Settings → Import JSON)
-            4. Tap "Start Exploit"
+            3. Ensure KernelSU/KSU Next/SukiSU is installed
+            4. Import kernel profile (Settings → Import JSON)
+            5. Tap "Start Exploit"
           draft: false
           prerelease: false
           files: |
