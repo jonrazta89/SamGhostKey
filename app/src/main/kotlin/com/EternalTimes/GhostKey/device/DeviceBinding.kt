@@ -141,12 +141,12 @@ object DeviceBinding {
     /** 读取真实内核版本（委托 KernelProbe，未提权上下文下稳定可用）。 */
     fun readKernelRelease(): String = KernelProbe.read()
 
-    /** 诊断信息：用于日志与提示，指明内核支持性判断结果。 */
+    /** Diagnosis info: for logs and prompts, indicates kernel support check result. */
     fun diagnosis(profileAvailable: Boolean = false): String =
         if (isAllowed(profileAvailable)) {
-            "内核支持（KMI 达标或已有 profile 覆盖）"
+            "Kernel supported (KMI met or profile available)"
         } else {
-            "内核不支持：需命中 KMI $TARGET_KERNEL_KMI，或先在设置页导入覆盖当前内核的 profile"
+            "Kernel unsupported: requires KMI $TARGET_KERNEL_KMI, or import a profile covering current kernel in Settings"
         }
 
     /** 当前设备描述，用于日志与提示。 */

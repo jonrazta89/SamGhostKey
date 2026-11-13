@@ -38,10 +38,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.EternalTimes.GhostKey.R
 import com.EternalTimes.GhostKey.data.RunLogMeta
 import com.EternalTimes.GhostKey.data.RunLogStore
 import com.EternalTimes.GhostKey.data.RunResult
@@ -134,22 +136,22 @@ private fun RunListPage(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onBack) {
-                Text("返回", color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "运行记录",
+                    stringResource(R.string.run_logs_title),
                     style = MaterialTheme.typography.titleLarge,
                     color = CvePalette.TextPrimary,
                 )
                 Text(
-                    if (runs.isEmpty()) "暂无记录" else "共 ${runs.size} 次 · 最新在最上",
+                    if (runs.isEmpty()) stringResource(R.string.no_runs) else stringResource(R.string.runs_count, runs.size),
                     style = MaterialTheme.typography.labelSmall,
                     color = CvePalette.TextMuted,
                 )
             }
             TextButton(onClick = onExportAll, enabled = runs.isNotEmpty()) {
-                Text("导出全部", color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.export_all), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
             }
         }
         HorizontalDivider(color = CvePalette.Outline, thickness = 1.dp)
@@ -157,10 +159,10 @@ private fun RunListPage(
         if (runs.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("暂无运行记录", color = CvePalette.TextMuted)
+                    Text(stringResource(R.string.no_run_logs), color = CvePalette.TextMuted)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "每执行一次 ROOT 会单独保存一份记录",
+                        stringResource(R.string.logs_hint_detail),
                         color = CvePalette.TextMuted,
                         style = MaterialTheme.typography.labelSmall,
                     )
@@ -180,7 +182,7 @@ private fun RunListPage(
                     ) {
                         TextButton(onClick = { confirmClear = true }) {
                             Text(
-                                "清空全部记录",
+                                stringResource(R.string.clear_all_logs),
                                 color = CvePalette.TextMuted,
                                 style = MaterialTheme.typography.labelSmall,
                             )
@@ -194,19 +196,19 @@ private fun RunListPage(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("清空全部运行记录？") },
+            title = { Text(stringResource(R.string.confirm_clear_logs)) },
             text = {
-                Text("将删除 ${runs.size} 份历史日志文件，不可恢复。\n主页终端里的实时内容不受影响。")
+                Text(stringResource(R.string.clear_logs_warning, runs.size))
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false
                     onClearAll()
-                }) { Text("清空", color = CvePalette.Danger) }
+                }) { Text(stringResource(R.string.clear), color = CvePalette.Danger) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) {
-                    Text("取消", color = CvePalette.TextSecondary)
+                    Text(stringResource(R.string.cancel), color = CvePalette.TextSecondary)
                 }
             },
         )
@@ -225,7 +227,7 @@ private fun RunRow(meta: RunLogMeta, onOpen: (RunLogMeta) -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "第 ${meta.runId} 次运行",
+                    stringResource(R.string.run_number, meta.runId),
                     color = CvePalette.TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -242,7 +244,7 @@ private fun RunRow(meta: RunLogMeta, onOpen: (RunLogMeta) -> Unit) {
                     append(dateTimeFormat.format(Date(meta.startedAt)))
                     append(" · ")
                     append(RunLogStore.fmtDuration(meta.durationMs))
-                    meta.lineCount?.let { append(" · $it 条") }
+                    meta.lineCount?.let { append(" · $it lines") }
                 },
                 color = CvePalette.TextMuted,
                 style = MaterialTheme.typography.labelSmall,
@@ -279,6 +281,15 @@ private fun RunDetailPage(
     }
     BackHandler(onBack = onBack)
 
+    // Extract string resources at Composable scope
+    val backStr = stringResource(R.string.back)
+    val copiedStr = stringResource(R.string.copied)
+    val contentNotLoadedStr = stringResource(R.string.content_not_loaded)
+    val copyStr = stringResource(R.string.copy)
+    val exportStr = stringResource(R.string.export)
+    val exportedToDownloadStr = stringResource(R.string.exported_to_download)
+    val exportFailedStr = stringResource(R.string.export_failed)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -292,11 +303,11 @@ private fun RunDetailPage(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onBack) {
-                Text("返回", color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                Text(backStr, color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "第 ${meta.runId} 次运行",
+                    stringResource(R.string.run_number, meta.runId),
                     style = MaterialTheme.typography.titleLarge,
                     color = CvePalette.TextPrimary,
                 )
@@ -308,7 +319,7 @@ private fun RunDetailPage(
                         meta.exitCode?.let { append(" (exit=$it)") }
                         append(" · ")
                         append(RunLogStore.fmtDuration(meta.durationMs))
-                        meta.lineCount?.let { append(" · $it 条") }
+                        meta.lineCount?.let { append(" · $it lines") }
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = resultColor(meta.result),
@@ -318,25 +329,25 @@ private fun RunDetailPage(
                 onClick = {
                     val text = lines?.joinToString("\n").orEmpty()
                     if (text.isBlank()) {
-                        toast(context, "内容尚未读出")
+                        toast(context, contentNotLoadedStr)
                     } else {
                         copyToClipboard(context, text)
-                        toast(context, "已复制本次记录")
+                        toast(context, copiedStr)
                     }
                 },
                 enabled = lines != null,
             ) {
-                Text("复制", color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                Text(copyStr, color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
             }
             TextButton(
                 onClick = {
                     val text = lines?.joinToString("\n").orEmpty()
                     val name = exportTextToDownload(context, text)
-                    toast(context, if (name != null) "已导出到 Download/$name" else "导出失败，请重试")
+                    toast(context, if (name != null) String.format(exportedToDownloadStr, name) else exportFailedStr)
                 },
                 enabled = lines != null,
             ) {
-                Text("导出", color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                Text(exportStr, color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
             }
         }
 
@@ -347,20 +358,20 @@ private fun RunDetailPage(
                 .padding(horizontal = 14.dp, vertical = 7.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            infoLine("设备", meta.device)
-            infoLine("内核", meta.kernel)
-            infoLine("Profile", meta.profile)
+            infoLine(stringResource(R.string.device_label), meta.device)
+            infoLine(stringResource(R.string.kernel_label), meta.kernel)
+            infoLine(stringResource(R.string.profile_label), meta.profile)
         }
         HorizontalDivider(color = CvePalette.Outline, thickness = 1.dp)
 
         val body = lines
         if (body == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("读取中…", color = CvePalette.TextMuted)
+                Text(stringResource(R.string.loading), color = CvePalette.TextMuted)
             }
         } else if (body.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("本次没有采集到日志", color = CvePalette.TextMuted)
+                Text(stringResource(R.string.no_logs_this_run), color = CvePalette.TextMuted)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -388,7 +399,7 @@ private fun RunDetailPage(
                     ) {
                         TextButton(onClick = onDelete) {
                             Text(
-                                "删除这一次记录",
+                                stringResource(R.string.delete_this_run),
                                 color = CvePalette.Danger,
                                 style = MaterialTheme.typography.labelSmall,
                             )

@@ -20,16 +20,16 @@ class ShizukuPermissionManager(private val context: Context) {
     private val listeners = mutableListOf<(ShizukuStatus) -> Unit>()
 
     private val binderReceived = Shizuku.OnBinderReceivedListener {
-        Log.i(TAG, "Shizuku binder 已连接")
+        Log.i(TAG, "Shizuku binder connected")
         notifyChanged()
     }
     private val binderDead = Shizuku.OnBinderDeadListener {
-        Log.w(TAG, "Shizuku binder 已断开")
+        Log.w(TAG, "Shizuku binder disconnected")
         notifyChanged()
     }
     private val permissionResult = Shizuku.OnRequestPermissionResultListener { requestCode, result ->
         if (requestCode == REQUEST_CODE) {
-            Log.i(TAG, "授权结果: granted=${result == PackageManager.PERMISSION_GRANTED}")
+            Log.i(TAG, "Authorization result: granted=${result == PackageManager.PERMISSION_GRANTED}")
             notifyChanged()
         }
     }
@@ -50,7 +50,7 @@ class ShizukuPermissionManager(private val context: Context) {
             else -> ShizukuStatus.READY
         }
     } catch (t: Throwable) {
-        Log.w(TAG, "检测 Shizuku 失败", t)
+        Log.w(TAG, "Failed to detect Shizuku", t)
         ShizukuStatus.NOT_INSTALLED
     }
 
@@ -60,7 +60,7 @@ class ShizukuPermissionManager(private val context: Context) {
     fun uidLabel(): String = when (uid()) {
         Process.SHELL_UID -> "shell(2000)"
         0 -> "root(0)"
-        -1 -> "未知"
+        -1 -> "Unknown"
         else -> "${uid()}"
     }
 
@@ -77,7 +77,7 @@ class ShizukuPermissionManager(private val context: Context) {
      */
     fun request(): Boolean = runCatching {
         if (!Shizuku.pingBinder()) {
-            Log.w(TAG, "Shizuku 未运行，无法请求授权")
+            Log.w(TAG, "Shizuku not running, cannot request permission")
             false
         } else if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
             true
@@ -85,7 +85,7 @@ class ShizukuPermissionManager(private val context: Context) {
             Shizuku.requestPermission(REQUEST_CODE)
             true
         }
-    }.onFailure { Log.e(TAG, "请求授权失败", it) }.getOrDefault(false)
+    }.onFailure { Log.e(TAG, "Failed to request permission", it) }.getOrDefault(false)
 
     fun addListener(listener: (ShizukuStatus) -> Unit) {
         listeners.add(listener)

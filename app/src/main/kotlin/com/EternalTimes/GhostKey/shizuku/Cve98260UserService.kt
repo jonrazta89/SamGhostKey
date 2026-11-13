@@ -353,10 +353,10 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
                  *   不要用软重启收场。
                  */
                 callback?.onLog(
-                    "<b> 提示：KSU 模块是运行时加载的，会一直留在内核里。" +
-                        "收场请用**完整重启**（adb reboot 或长按电源），" +
-                        "不要用软重启 —— 软重启会留下状态残缺的模块，" +
-                        "下次开机可能反复自动重启。",
+                    "<b> Note: KSU module is loaded at runtime and stays in kernel. " +
+                        "Use **full reboot** (adb reboot or power button) to finish. " +
+                        "Don't use soft reboot — it leaves the module in a broken state, " +
+                        "causing repeated auto-reboots on next boot.",
                 )
             } else {
                 callback?.onLog(
@@ -393,15 +393,15 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             File(workDir, LAST_INJECT_BOOT_ID).readText().trim()
         }.getOrNull()
         if (prev.isNullOrEmpty() || prev != cur) return true
-        callback?.onLog("<s> error: 上一次提权之后设备没有完整重启过（boot_id 未变）")
+        callback?.onLog(" error: device has not fully rebooted since last exploit (boot_id unchanged)")
         callback?.onLog(
-            "<s> 内核 slab 里可能还留着上次喷洒的脏 cred：某个 task 的 uid 变成内核" +
-                "地址的低 32 位（负 userId），AMS 一扫描就抛 IllegalArgumentException，" +
-                "system_server 会进入崩溃循环。",
+            " kernel slab may still contain dirty cred from last spray: a task's uid becomes " +
+                "the low 32 bits of a kernel address (negative userId), AMS throws " +
+                "IllegalArgumentException on scan, system_server enters crash loop."
         )
         callback?.onLog(
-            "<b> 请先**完整重启**（adb reboot / 长按电源）再跑一次。" +
-                "软重启清不掉内核 slab。",
+            "<b> Please **fully reboot** (adb reboot / power button) before running again. " +
+                "Soft reboot does not clear kernel slab."
         )
         return false
     }
@@ -1415,14 +1415,13 @@ class Cve98260UserService(private val context: Context) : ICve98260UserService.S
             }
         }.getOrNull() ?: return null
         val profile = DeviceProfile.parse(id, text, allowMissingDevice) ?: run {
-            Log.w(TAG, "解析 device profile $id 失败")
+            Log.w(TAG, "Failed to parse device profile $id")
             return null
         }
         if (!DeviceProfilePolicy.belongsTo(profile, product, device)) {
             Log.w(
                 TAG,
-                "device profile $id 不属于本机 (profile=${profile.product}/${profile.device} " +
-                    "device=$product/$device)，忽略",
+                "device profile $id does not belong to this device (profile=${profile.product}/${profile.device} device=$product/$device), ignoring",
             )
             return null
         }

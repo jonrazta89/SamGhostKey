@@ -37,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.EternalTimes.GhostKey.R
 import com.EternalTimes.GhostKey.ui.theme.CvePalette
 import com.EternalTimes.GhostKey.viewmodel.ExploitViewModel
 import com.EternalTimes.GhostKey.viewmodel.ManagerOption
@@ -61,6 +63,10 @@ fun SettingsScreen(
     var showManagerPicker by remember { mutableStateOf(false) }
     var pendingExport by remember { mutableStateOf("") }
 
+    // Extract string resources at Composable scope
+    val exportedToDownloadStr = stringResource(R.string.exported_to_download)
+    val exportFailedStr = stringResource(R.string.export_failed)
+
     val imgPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importImageFromUri(uri, queryDisplayName(context, uri))
     }
@@ -74,9 +80,9 @@ fun SettingsScreen(
                     it.write(pendingExport.toByteArray(Charsets.UTF_8))
                 }
             }.onSuccess {
-                Toast.makeText(context, "已导出 ${queryDisplayName(context, uri)}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, exportedToDownloadStr.replace("%s", queryDisplayName(context, uri)), Toast.LENGTH_SHORT).show()
             }.onFailure {
-                Toast.makeText(context, "导出失败：${it.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, exportFailedStr.replace("%s", it.message.orEmpty()), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -97,12 +103,12 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onBack) {
-                Text("返回", color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text("设置", style = MaterialTheme.typography.titleLarge, color = CvePalette.TextPrimary)
+                Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, color = CvePalette.TextPrimary)
                 Text(
-                    "内核 Profile · 导入 / 导出 / 管理器",
+                    stringResource(R.string.kernel_profiles_subtitle),
                     style = MaterialTheme.typography.labelSmall,
                     color = CvePalette.TextMuted,
                 )
@@ -117,61 +123,60 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SettingsCard(title = "目标内核 Profile") {
+            SettingsCard(title = stringResource(R.string.kernel_profiles)) {
                 Text(
-                    "当前：" + (selected ?: "自动适配（当前设备）"),
+                    stringResource(R.string.current_profile) + (selected ?: stringResource(R.string.auto_adapt_current)),
                     color = CvePalette.TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "设备内核：${uiState.kernelRelease}",
+                    stringResource(R.string.device_kernel, uiState.kernelRelease),
                     color = CvePalette.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    "命中：${uiState.matchedProfile}",
+                    stringResource(R.string.matched_profile, uiState.matchedProfile),
                     color = CvePalette.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { showProfilePicker = true }) {
-                        Text("选择内核")
+                        Text(stringResource(R.string.select_kernel))
                     }
                     OutlinedButton(onClick = {
                         pendingExport = viewModel.buildExportText()
                         createDoc.launch(viewModel.exportFileName())
                     }) {
-                        Text("导出当前 Profile")
+                        Text(stringResource(R.string.export_current_profile))
                     }
                 }
                 Text(
-                    "导出的文件名自动带版本号（如 …-v${appVersion(context)}.conf）",
+                    stringResource(R.string.export_filename_version, appVersion(context)),
                     color = CvePalette.TextMuted,
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
 
-            SettingsCard(title = "导入内核文件") {
+            SettingsCard(title = stringResource(R.string.import_profile)) {
                 Text(
-                    "支持 boot.img（自动提取 BTF 结构偏移 + kallsyms 符号地址）与 JSON / HOCON profile。" +
-                        "GKI 6.6 内核可直接补齐全部字段；个别符号缺失时会列出待补项。",
+                    stringResource(R.string.import_description),
                     color = CvePalette.TextMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Button(onClick = { imgPicker.launch(arrayOf("*/*")) }) {
-                    Text("导入 IMG（boot.img）")
+                    Text(stringResource(R.string.import_boot_img))
                 }
                 OutlinedButton(onClick = {
                     textPicker.launch(
                         arrayOf("application/json", "text/plain", "application/octet-stream", "*/*"),
                     )
                 }) {
-                    Text("导入 JSON / HOCON")
+                    Text(stringResource(R.string.import_json_hocon))
                 }
                 if (uiState.importMessage.isNotBlank()) {
                     val color = when {
-                        uiState.importMessage.contains("失败") -> CvePalette.Danger
-                        uiState.importMessage.contains("缺少") -> CvePalette.Warning
+                        uiState.importMessage.contains(stringResource(R.string.import_failed).split(":")[0]) -> CvePalette.Danger
+                        uiState.importMessage.contains(stringResource(R.string.profile_missing_fields).split(":")[0]) -> CvePalette.Warning
                         else -> CvePalette.Success
                     }
                     Text(
@@ -182,9 +187,9 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "已导入 Profile（${stored.size}）") {
+            SettingsCard(title = stringResource(R.string.imported_profiles, stored.size)) {
                 if (stored.isEmpty()) {
-                    Text("暂无", color = CvePalette.TextMuted, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.no_profiles_yet), color = CvePalette.TextMuted, style = MaterialTheme.typography.bodySmall)
                 } else {
                     stored.forEach { sp ->
                         Row(
@@ -200,7 +205,7 @@ fun SettingsScreen(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    if (sp.complete) "字段完整" else "缺少：${sp.missing.joinToString()}",
+                                    if (sp.complete) stringResource(R.string.profile_fields_complete) else stringResource(R.string.profile_missing_fields, sp.missing.joinToString()),
                                     color = if (sp.complete) CvePalette.Success else CvePalette.Warning,
                                     style = MaterialTheme.typography.labelSmall,
                                     maxLines = 2,
@@ -208,7 +213,7 @@ fun SettingsScreen(
                                 )
                             }
                             TextButton(onClick = { viewModel.deleteStoredProfile(sp.fileName) }) {
-                                Text("删除", color = CvePalette.Danger, style = MaterialTheme.typography.labelLarge)
+                                Text(stringResource(R.string.delete), color = CvePalette.Danger, style = MaterialTheme.typography.labelLarge)
                             }
                         }
                         HorizontalDivider(color = CvePalette.Outline, thickness = 1.dp)
@@ -216,19 +221,19 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "Root 管理器（自动适配）") {
+            SettingsCard(title = stringResource(R.string.root_manager)) {
                 val cands = uiState.managerCandidates
                 /*
-                 * 检测是异步的，首屏拿到的是「还没扫完」的中间态。
-                 * 不区分「还在查」和「查了没有」，用户会把前者读成后者，
-                 * 于是以为「检测不到管理器」。
+                 * Detection is async; initial UI gets "still scanning" intermediate state.
+                 * Not distinguishing "still scanning" from "scanned, nothing found" makes users
+                 * think "no manager detected".
                  */
                 val scanning = uiState.managerScanning
                 Text(
-                    "检测到：" + when {
-                        scanning -> "检测中…"
-                        uiState.managerScanError.isNotBlank() -> "检测失败（${uiState.managerScanError}）"
-                        else -> uiState.detectedManager.ifBlank { "未检测到" }
+                    stringResource(R.string.detected) + when {
+                        scanning -> stringResource(R.string.scanning_managers)
+                        uiState.managerScanError.isNotBlank() -> stringResource(R.string.scan_error, uiState.managerScanError)
+                        else -> uiState.detectedManager.ifBlank { stringResource(R.string.no_managers_found) }
                     },
                     color = if (uiState.managerScanError.isNotBlank() && !scanning) {
                         CvePalette.Warning
@@ -238,55 +243,53 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "KSU 来源：" + when {
-                        scanning -> "检测中…"
-                        else -> uiState.ksuSourceLabel.ifBlank { "内置 ksud" }
+                    stringResource(R.string.ksu_source) + when {
+                        scanning -> stringResource(R.string.scanning_managers)
+                        else -> uiState.ksuSourceLabel.ifBlank { stringResource(R.string.ksu_source_bundled) }
                     },
                     color = CvePalette.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { viewModel.detectKsuSource(force = true) }) {
-                        Text("重新检测")
+                        Text(stringResource(R.string.rescan))
                     }
                     if (cands.size > 1) {
                         Button(onClick = { showManagerPicker = true }) {
-                            Text("选择管理器")
+                            Text(stringResource(R.string.select_manager))
                         }
                     }
                 }
                 if (cands.size > 1) {
                     Text(
-                        "当前选择：" + (uiState.selectedManagerPackage ?: "自动（优先级首个）"),
+                        stringResource(R.string.current_selection, uiState.selectedManagerPackage ?: stringResource(R.string.auto_priority_first)),
                         color = CvePalette.TextSecondary,
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        "检测到 ${cands.size} 个管理器。接管会加载所选管理器自带的 ksud，" +
-                            "使内核模块与已装管理器同源（否则部分管理器不识别提权、也不弹授权框）。",
+                        stringResource(R.string.manager_detected_explanation, cands.size),
                         color = CvePalette.TextMuted,
                         style = MaterialTheme.typography.labelSmall,
                     )
                 } else {
                     Text(
-                        "提权时优先从上面检测到的管理器提取 ksud（按内容特征识别，改名或二次打包也能命中），" +
-                            "未检测到才回落 APK 内置 ksud。管理器升级即获得新内核 KMI 支持，无需更新本应用。",
+                        stringResource(R.string.prefer_device_ksud_explanation),
                         color = CvePalette.TextMuted,
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
 
-            SettingsCard(title = "日志") {
-                /* 次数由 ViewModel 持有并随增删刷新；之前这里用
-                   remember { viewModel.listRunLogs().size }，只算一次且在主线程做磁盘 IO，
-                   跑完一轮 ROOT 回来看到的还是旧数字。 */
+            SettingsCard(title = stringResource(R.string.logs)) {
+                /* Count held by ViewModel and refreshed on add/delete; previously here used
+                   remember { viewModel.listRunLogs().size }, only computed once and on main thread doing disk IO,
+                   after a ROOT run you'd still see old number. */
                 val runCount = uiState.runLogCount
                 OutlinedButton(onClick = onOpenLogs) {
-                    Text("查看运行记录（$runCount 次）")
+                    Text(stringResource(R.string.view_run_logs, runCount))
                 }
                 Text(
-                    "每次 ROOT 单独保存一份记录，点进去看当次的完整日志",
+                    stringResource(R.string.run_logs_description),
                     color = CvePalette.TextMuted,
                     style = MaterialTheme.typography.labelSmall,
                 )
@@ -346,17 +349,17 @@ private fun ProfilePickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = CvePalette.TextMuted)
+                Text(stringResource(R.string.cancel), color = CvePalette.TextMuted)
             }
         },
         title = {
-            Text("选择目标内核 Profile", color = CvePalette.TextPrimary)
+            Text(stringResource(R.string.select_target_profile), color = CvePalette.TextPrimary)
         },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 options.forEach { opt ->
                     val isSelected = opt == selected
-                    val label = opt ?: "自动适配（当前设备）"
+                    val label = opt ?: stringResource(R.string.auto_adapt_current)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -386,7 +389,7 @@ private fun ProfilePickerDialog(
     )
 }
 
-/** 多管理器选择弹窗：null = 自动（优先级首个），否则按选中包名接管。 */
+/** Multi-manager picker dialog: null = auto (priority first), otherwise take over by selected package name. */
 @Composable
 private fun ManagerPickerDialog(
     options: List<ManagerOption>,
@@ -400,18 +403,18 @@ private fun ManagerPickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = CvePalette.TextMuted)
+                Text(stringResource(R.string.cancel), color = CvePalette.TextMuted)
             }
         },
         title = {
-            Text("选择接管用的 Root 管理器", color = CvePalette.TextPrimary)
+            Text(stringResource(R.string.select_takeover_manager), color = CvePalette.TextPrimary)
         },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 rows.forEach { opt ->
                     val pkg = opt?.packageName
                     val isSelected = pkg == selected
-                    val label = opt?.label ?: "自动（优先级首个）"
+                    val label = opt?.label ?: stringResource(R.string.auto_priority_first)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

@@ -33,13 +33,13 @@ object NativeContract {
          */
         val EXPECTED_MS = listOf(10_000L, 12_000L, 30_000L, 6_000L, 20_000L)
 
-        /** 阶段刚开始时的默认动作说明。 */
+        /** Default action hints when a stage starts (used for UI). */
         val ENTER_HINT = listOf(
-            "启动 KASLR slide 校准",
-            "启动线性映射基址校准",
-            "下发注入指令",
-            "校验临时 root 通道",
-            "接管 KernelSU",
+            "Starting KASLR slide calibration",
+            "Starting linear mapping base calibration",
+            "Sending injection command",
+            "Verifying temporary root channel",
+            "Taking over KernelSU",
         )
     }
 

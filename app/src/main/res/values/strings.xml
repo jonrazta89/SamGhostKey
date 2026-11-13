@@ -1,5 +1,317 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 应用名唯一定义处：Manifest(android:label)、UI 标题、构建产物名(GhostKey)都源于此 / 与之对齐 -->
+    <!-- App name -->
     <string name="app_name">GhostKey</string>
+
+    <!-- Main Screen -->
+    <string name="detecting">Detecting\u2026</string>
+    <string name="no_match">No match</string>
+    <string name="ready">Ready</string>
+    <string name="start_exploit">Start Exploit</string>
+    <string name="stop">Stop</string>
+    <string name="exploit_running">Exploit running\u2026</string>
+    <string name="initializing_pipeline">Initializing pipeline</string>
+    <string name="starting">Starting</string>
+    <string name="pipeline_complete">Pipeline complete</string>
+    <string name="pipeline_terminated">Pipeline terminated (exit=%d)</string>
+    <string name="user_stopped">Stopped by user</string>
+    <string name="kernel_version">Kernel: %s</string>
+    <string name="matched_profile">Matched: %s</string>
+    <string name="needs_profile">No match (needs profile)</string>
+    <string name="shizuku_status">Shizuku: %s</string>
+    <string name="manager_status">Manager: %s</string>
+    <string name="scanning_managers">Scanning managers\u2026</string>
+    <string name="scan_error">Scan error: %s</string>
+    <string name="no_managers_found">No root managers found</string>
+    <string name="select_manager">Select manager for takeover</string>
+    <string name="current_selection">Current selection: %s</string>
+    <string name="auto_priority_first">Auto (priority first)</string>
+    <string name="manager_detected_explanation">Detected %d manager(s). Takeover will load the selected manager\'s built-in ksud, making the kernel module same-origin as the installed manager (otherwise some managers won\'t recognize the exploit or show auth dialog).</string>
+    <string name="prefer_device_ksud_explanation">Prefer ksud from detected managers above (identified by content signature, works even if renamed or repackaged), fall back to APK-bundled ksud if none detected. Manager upgrades provide new kernel KMI support without updating this app.</string>
+    <string name="shizuku_permission_needed">Please complete Shizuku authorization (see above).</string>
+    <string name="no_match_needs_profile">Current kernel has no matching profile (built-in or imported).</string>
+    <string name="temp_root_banner_title">Temporary ROOT · Lost on reboot</string>
+    <string name="temp_root_banner_body">This tool provides temporary root that disappears on reboot. For persistent root, use KernelSU or similar.</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Settings</string>
+    <string name="kernel_profiles_subtitle">Kernel Profiles · Import / Export / Manager</string>
+    <string name="current_profile">Current: </string>
+    <string name="device_kernel">Device kernel: %s</string>
+    <string name="select_kernel">Select kernel</string>
+    <string name="export_current_profile">Export current profile</string>
+    <string name="export_filename_version">Exported filename includes version (e.g. …-v%s.conf)</string>
+    <string name="import_description">Supports boot.img (auto-extracts BTF struct offsets + kallsyms symbol addresses) and JSON / HOCON profiles. GKI 6.6 kernels can fill all fields directly; missing symbols will be listed.</string>
+    <string name="imported_profiles">Imported Profiles (%d)</string>
+    <string name="no_profiles_yet">None yet</string>
+    <string name="profile_fields_complete">Fields complete</string>
+    <string name="profile_missing_fields">Missing: %s</string>
+    <string name="device_info">Device Info</string>
+    <string name="kernel_version_label">Kernel version</string>
+    <string name="device_model">Model</string>
+    <string name="kernel_support_status">Kernel support</string>
+    <string name="supported_kmi_or_profile">Supported (KMI met or profile available)</string>
+    <string name="unsupported_needs_kmi_or_profile">Unsupported: needs KMI %s, or import a profile covering current kernel in Settings</string>
+    <string name="kernel_profiles">Kernel Profiles</string>
+    <string name="builtin_profiles">Built-in profiles (%d)</string>
+    <string name="user_profiles">User profiles (%d)</string>
+    <string name="import_profile">Import Profile</string>
+    <string name="import_json_hocon">Import JSON / HOCON</string>
+    <string name="import_boot_img">Import IMG (boot.img)</string>
+    <string name="import_complete">Import complete</string>
+    <string name="import_failed">Import failed: %s</string>
+    <string name="select_target_profile">Select target kernel profile</string>
+    <string name="auto_adapt_current">Auto adapt (current device)</string>
+    <string name="root_manager">Root Manager</string>
+    <string name="detected">Detected: </string>
+    <string name="ksu_source">KSU source: </string>
+    <string name="ksu_source_bundled">Bundled ksud</string>
+    <string name="rescan">Rescan</string>
+    <string name="logs">Logs</string>
+    <string name="view_run_logs">View run logs (%d runs)</string>
+    <string name="run_logs_description">Each ROOT run saves a separate log. Tap to view full log for that run.</string>
+    <string name="export_all_logs">Export all logs</string>
+    <string name="exported_to_download">Exported to Download/%s</string>
+    <string name="export_failed">Export failed, please retry</string>
+    <string name="no_logs_yet">No run logs yet</string>
+    <string name="logs_hint">Each ROOT execution saves a separate record</string>
+    <string name="clear_all_logs">Clear all logs</string>
+    <string name="confirm_clear_logs">Clear all run logs?</string>
+    <string name="clear_logs_warning">Will delete %d historical log files, cannot be undone. Real-time content in home terminal is unaffected.</string>
+    <string name="clear">Clear</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="run_number">Run #%d</string>
+    <string name="confirm_delete_profile">Delete profile?</string>
+    <string name="delete_profile_warning">Delete %s? This cannot be undone.</string>
+    <string name="select_takeover_manager">Select takeover manager</string>
+
+    <!-- Log Viewer -->
+    <string name="run_logs_title">Run Logs</string>
+    <string name="back">Back</string>
+    <string name="export_all">Export all</string>
+    <string name="no_runs">No runs recorded</string>
+    <string name="runs_count">%d runs total · Latest on top</string>
+    <string name="no_run_logs">No run logs yet</string>
+    <string name="logs_hint_detail">Each ROOT execution saves a separate record</string>
+    <string name="copy">Copy</string>
+    <string name="export">Export</string>
+    <string name="content_not_loaded">Content not loaded yet</string>
+    <string name="copied">Copied this run log</string>
+    <string name="device_label">Device</string>
+    <string name="kernel_label">Kernel</string>
+    <string name="profile_label">Profile</string>
+    <string name="loading">Loading…</string>
+    <string name="no_logs_this_run">No logs collected this run</string>
+    <string name="delete_this_run">Delete this run</string>
+
+    <!-- ExploitViewModel -->
+    <string name="no_match_profile">No match (needs profile)</string>
+    <string name="shizuku_permission_sent">Shizuku permission request sent, please allow it in Shizuku</string>
+    <string name="shizuku_not_running">Shizuku not running, cannot request permission (start Shizuku via adb/wireless debug first)</string>
+    <string name="run_started">Run #%d started</string>
+    <string name="stopped">Stopped</string>
+    <string name="import_read_failed">Failed to read file</string>
+    <string name="import_image_failed">Failed to read image</string>
+    <string name="import_deleted">Deleted %s</string>
+    <string name="import_success_complete">Imported %s (fields complete)</string>
+    <string name="import_success_incomplete">Imported %1$s, missing fields: %2$s</string>
+    <string name="exploit_success">Success</string>
+    <string name="exploit_failed">Failed</string>
+
+    <!-- Log Parsing Hints -->
+    <string name="log_calib_a">Collecting timer call sites</string>
+    <string name="log_calib_b">Resolving linear mapping base</string>
+    <string name="log_slide">Building k_itimer allocation samples</string>
+    <string name="log_selinux">Rewriting SELinux state</string>
+    <string name="log_race_child">Preparing race child process</string>
+    <string name="log_captured">Capturing UAF candidate pages</string>
+    <string name="log_stream_fill">Refilling freed page frames</string>
+    <string name="log_cred_plant">Credential escalation attempt %s</string>
+    <string name="log_rootd">Waiting for root channel ready</string>
+    <string name="log_cleanup">Cleaning up race child processes</string>
+    <string name="log_ksu">Executing KSU late-load</string>
+    <string name="log_verify_retry">Verification retrying</string>
+    <string name="log_skip_ksu">Skipping KSU takeover</string>
+
+    <!-- Shizuku Status -->
+    <string name="shizuku_granted">Granted</string>
+    <string name="shizuku_denied">Denied</string>
+    <string name="shizuku_unavailable">Unavailable</string>
+    <string name="shizuku_unknown">Unknown</string>
+
+    <!-- Privilege Gate States -->
+    <string name="privilege_ok">Connected</string>
+    <string name="privilege_need_permission">Permission needed</string>
+    <string name="privilege_error">Detection failed</string>
+
+    <!-- Kernel Support -->
+    <string name="kernel_in_range">In range (vulnerable)</string>
+    <string name="kernel_out_of_range">Out of range (patched or too old)</string>
+    <string name="kernel_unknown">Unknown (cannot read or generic)</string>
+
+    <!-- KSU Sources -->
+    <string name="ksu_source_device_manager">Device manager: %1$s%2$s</string>
+    <string name="ksu_source_unavailable">Unavailable: %s</string>
+
+    <!-- Import Messages -->
+    <string name="import_success">Imported %s</string>
+
+    <!-- Failure Diagnoser Titles & Messages -->
+    <string name="diag_post_ota_title">Kernel just completed OTA / just rebooted, runtime layout differs from profile assumptions</string>
+    <string name="diag_post_ota_cause1">Kernel just completed OTA / just rebooted, runtime layout differs from profile assumptions</string>
+    <string name="diag_post_ota_cause2">Imported profile does not match current kernel version (boot.img version mismatch)</string>
+    <string name="diag_post_ota_cause3">Abnormal background load, k_itimer sampling contaminated</string>
+    <string name="diag_post_ota_fix1">Reboot device and retry once</string>
+    <string name="diag_post_ota_fix2">Confirm profile matches current kernel version (kernel version in device info)</string>
+    <string name="diag_post_ota_fix3">If continuous failures, save run log for analysis</string>
+
+    <string name="diag_calib_a_title">Calibration A failed: k_itimer struct size not in candidate set {0x108,0x100,0x110,0x118}, no records matched</string>
+    <string name="diag_calib_a_cause1">Device k_itimer struct size not in candidate set {0x108,0x100,0x110,0x118}, all sizes failed to match records</string>
+    <string name="diag_calib_a_cause2">Sampling window system load too low, timer call sites not sufficiently triggered</string>
+    <string name="diag_calib_a_fix1">Confirm Shizuku authorized and tracefs writable (Settings → Developer options)</string>
+    <string name="diag_calib_a_fix2">Reboot device and retry, complete sampling within single boot</string>
+    <string name="diag_calib_a_fix3">If still failing, save run log (including [calib_a] and arm_kmem_cache_alloc lines) for analysis</string>
+
+    <string name="diag_tracefs_title">Tracefs unavailable: cannot read trace events</string>
+    <string name="diag_tracefs_cause1">Some ROMs stripped tracefs nodes</string>
+    <string name="diag_tracefs_fix1">Confirm Shizuku running and authorized for this app</string>
+    <string name="diag_tracefs_fix2">Check Developer options USB debugging (wireless debugging) availability</string>
+    <string name="diag_tracefs_fix3">Restart Shizuku and retry; if still failing save log for analysis</string>
+
+    <string name="diag_calib_b_title">Page offset resolution failed: calibration A base address differs from actual</string>
+    <string name="diag_calib_b_cause1">Calibration A KASLR slide inaccurate (upstream error, fix calibration A first)</string>
+    <string name="diag_calib_b_cause2">Kernel memory layout changed between the two calibrations</string>
+    <string name="diag_calib_b_fix1">Reboot device to complete both calibrations in same boot state</string>
+    <string name="diag_calib_b_fix2">Run full pipeline (don\'t skip calibration steps)</string>
+
+    <string name="diag_sampling_title">Insufficient sampling: too few trigger samples to resolve page offset</string>
+    <string name="diag_sampling_cause1">System background load too low, timer call sites not sufficiently triggered</string>
+    <string name="diag_sampling_cause2">Device just cold booted, runtime services not up yet</string>
+    <string name="diag_sampling_fix1">Let device be in light usage (e.g. play music) then retry</string>
+    <string name="diag_sampling_fix2">Just run again, sample count usually better second time</string>
+
+    <string name="diag_residual_title">Residual process from previous round: residual process still pinning freed pages, continuing injection will crash kernel</string>
+    <string name="diag_residual_cause1">Previous exploit round didn\'t complete cleanup (force quit / power loss mid-way)</string>
+    <string name="diag_residual_fix1">Must reboot device before retry (killing residual process doesn\'t fix)</string>
+
+    <string name="diag_abort_title">Exploit chain aborted: couldn\'t get usable UAF window, early exit</string>
+    <string name="diag_abort_cause1">Kernel mm_page_alloc/mm_page_free events didn\'t fire, page recycle process cannot self-verify (judgment unreliable)</string>
+    <string name="diag_abort_cause2">Victim page not reallocated: race window missed (kernel may have partial backport patches for this vuln)</string>
+    <string name="diag_abort_cause3">Device kernel tracefs event groups differ from expected, page filtering and hit detection all failed</string>
+    <string name="diag_abort_fix1">Reboot device and retry 1-2 times (race window and memory layout differ each boot)</string>
+    <string name="diag_abort_fix2">Save full content of Run Logs page, especially for kernel adaptation analysis</string>
+
+    <string name="diag_rootd_timeout_title">Vulnerability triggered but root channel not established: rootd timeout</string>
+    <string name="diag_rootd_timeout_cause1">Device kernel has partial backport patches for this vuln, UAF window unstable</string>
+    <string name="diag_rootd_timeout_cause2">System load causing race timing deviation</string>
+    <string name="diag_rootd_timeout_fix1">Reboot device and retry full pipeline 1-2 times</string>
+    <string name="diag_rootd_timeout_fix2">If timeout at same position every time, kernel may be patched - record model and kernel version for feedback</string>
+
+    <string name="diag_no_profile_title">Kernel offset table not loaded: injection missing profile data</string>
+    <string name="diag_no_profile_cause1">No profile imported / imported corrupted profile file</string>
+    <string name="diag_no_profile_fix1">Re-import profile for matching kernel version (extracted from boot.img)</string>
+
+    <string name="diag_task_size_title">Task struct size mismatch: recorded size not in expected range</string>
+    <string name="diag_task_size_fix1">Update to version after this fix and retry (size matching changed to [sizeof, sizeof+0x400] window, compatible with vendor extensions)</string>
+    <string name="diag_task_size_fix2">Log shows [task] raw=0 means event not firing; raw>0 but hits=0 means size window wrong, save the [task] sizes= line for analysis</string>
+
+    <string name="diag_verify_failed_title">Temporary root verification failed: su check failed after privilege channel established</string>
+    <string name="diag_verify_failed_cause1">Injection phase credential rewrite incomplete (upstream race partially succeeded)</string>
+    <string name="diag_verify_failed_cause2">Verification child process blocked by SELinux or system policy</string>
+    <string name="diag_verify_failed_fix1">Reboot device and retry full pipeline</string>
+    <string name="diag_verify_failed_fix2">Check SELinux status (Settings → Developer options), don\'t force Permissive</string>
+
+    <string name="diag_ksu_already_title">Previous round kernelsu module still alive</string>
+    <string name="diag_ksu_already_cause1">Previous exploit\'s injected kernelsu module still loaded</string>
+    <string name="diag_ksu_already_fix1">Reboot device before rerun, manager can only see new takeover after reboot</string>
+    <string name="diag_ksu_already_fix2">If just want root, no need to rerun - already in temporary root state</string>
+
+    <string name="diag_ksu_takeover_title">KSU takeover failed: module load failed</string>
+    <string name="diag_ksu_takeover_cause1">Device KernelSU manager / ksud version too old, KMI mismatch</string>
+    <string name="diag_ksu_takeover_cause2">Module load path restricted by kernel</string>
+    <string name="diag_ksu_takeover_fix1">Update device KernelSU manager to latest version</string>
+    <string name="diag_ksu_takeover_fix2">Retry once; if continuous failures save log and note manager version</string>
+
+    <string name="diag_no_ksud_title">No ksud found: no KernelSU manager on device and bundled fallback failed</string>
+    <string name="diag_no_ksud_cause1">Bundled ksud incompatible with current architecture / KMI</string>
+    <string name="diag_no_ksud_fix1">Install official KernelSU manager first, then rerun pipeline</string>
+
+    <string name="diag_shizuku_denied_title">Shizuku authorization denied</string>
+    <string name="diag_shizuku_denied_cause1">User denied Shizuku authorization for this app</string>
+    <string name="diag_shizuku_denied_fix1">Open Shizuku app and ensure service running (wireless debugging / adb both work)</string>
+    <string name="diag_shizuku_denied_fix2">Re-request authorization in this app and allow</string>
+
+    <string name="diag_exit2_title">Pipeline terminated (exit=2): KASLR offset resolution failed, no known sub-pattern matched</string>
+    <string name="diag_exit2_cause1">Calibration A failed to resolve reliable kernel base from k_itimer sampling (most common failure)</string>
+    <string name="diag_exit2_cause2">Current kernel layout differs from selected profile (just OTA/reboot, or profile version mismatch causing timer_link/cred_link offset errors)</string>
+    <string name="diag_exit2_cause3">Or this failure is a new variant not yet covered by diagnoser (exit code 2 but log pattern not captured by rules)</string>
+    <string name="diag_exit2_fix1">Reboot device and retry once — KASLR differs each boot, rerun usually fixes</string>
+    <string name="diag_exit2_fix2">Confirm running latest build (1.1.4+), and profile extracted from this device\'s boot.img with release exactly matching current kernel</string>
+    <string name="diag_exit2_fix3">Don\'t just retry: save full Run Logs page content (especially [calib_a] / [calib_b] lines) for kernel adaptation analysis</string>
+
+    <string name="diag_generic_title">Pipeline terminated (exit=%d): no known failure pattern matched</string>
+    <string name="diag_generic_cause">Timing-sensitive race window missed, or temporary environment anomaly</string>
+    <string name="diag_generic_fix1">Don\'t just retry: copy full Run Logs page content for kernel adaptation analysis</string>
+    <string name="diag_generic_fix2">If continuous failures, reboot device and retry; if still failing save run log for analysis</string>
+
+    <!-- Device Profile Notes -->
+    <string name="profile_note_explicit_zero">Explicit zero values (e.g. page_offset_trusted = 0) count as explicit negation, won\'t be overridden by generic config\'s 1</string>
+
+    <!-- Main Screen Dialogs -->
+    <string name="proceed_anyway">Proceed anyway</string>
+    <string name="kernel_out_of_range_title">Kernel out of supported range</string>
+    <string name="kernel_current">Current kernel</string>
+    <string name="vulnerability_range">Vulnerability range (CVE-2026-98260 official advisory)</string>
+    <string name="vulnerability_range_body">POSIX CPU timer exec() UAF introduced in Linux 5.7. Fixed: 6.6 ≥ 6.6.158, 6.12 ≥ 6.12.112, 6.18 ≥ 6.18.54, 7.2 ≥ 7.2.8, 7.3 and later; 5.10 / 5.15 / 6.1 branches unpatched, still affected.</string>
+    <string name="warning">Warning</string>
+    <string name="kernel_out_of_range_warning">Your kernel is not in the above affected range (below 5.7, or already a patched version). Execution will continue (not blocked) but exploit will likely fail. Vendors may have backported fixes without changing version number; this judgment is for reference only. Assess risk yourself.</string>
+    <string name="got_it">Got it</string>
+    <string name="close_usb_debug">Close USB debugging</string>
+    <string name="usb_debug_still_on">ROOT completed, detected "USB debugging" still enabled. If the adb channel remains open after root, local malicious apps may gain shell access via adb, expanding attack surface.</string>
+    <string name="close_usb_debug_instructions">Go to Settings → System and  updates → Developer options, turn off "USB debugging" and "USB wireless debugging". Can re-enable anytime, no impact on normal use.</string>
+    <string name="notice_title">Usage Notice and Disclaimer</string>
+    <string name="notice_purpose">Purpose</string>
+    <string name="notice_purpose_body">This tool exploits CVE-2026-98260 kernel vulnerability to escalate adb shell to root on local device, and optionally takes over KernelSU. For authorized device security research and learning only.</string>
+    <string name="notice_disclaimer">Disclaimer</string>
+    <string name="notice_disclaimer_body">User assumes all consequences. Author and distributor bear no responsibility for device anomalies, data loss, system instability, warranty void, or any direct/indirect damages caused by this tool. Do not use on any non-owned or unauthorized devices.</string>
+    <string name="notice_process">Exploit Process</string>
+    <string name="notice_usb_debug_after">Close USB debugging after completion (important)</string>
+    <string name="notice_usb_debug_after_body">After root completes, close "USB debugging" and "USB wireless debugging": Settings → System and updates → Developer options → turn off switches. Only need to close once; can re-enable anytime, no impact on normal use.</string>
+    <string name="inject_risk_title">Injection Phase · Security Notice</string>
+    <string name="inject_risk_current">Current State</string>
+    <string name="inject_risk_current_body">Entered injection (UAF exploit) phase, acquiring shell context via adb/USB debugging channel to write kernel ftrace.</string>
+    <string name="inject_risk_risk">Risk</string>
+    <string name="inject_risk_risk_body">This process depends on adb channel established by "USB debugging / USB wireless debugging". If channel remains open after root, local malicious apps may gain shell access via adb, expanding attack surface.</string>
+    <string name="inject_risk_solution">Solution</string>
+    <string name="inject_risk_solution_body">After root completes, go to Settings → System and updates → Developer options, turn off "USB debugging" and "USB wireless debugging". Only need to close once to eliminate this risk; can re-enable anytime, no impact on normal use.</string>
+    <string name="inject_risk_note">Note</string>
+    <string name="inject_risk_note_body">This dialog is a safety reminder; pipeline continues running in background.</string>
+    <string name="unknown">Unknown</string>
+    <string name="kernel_unsupported">Kernel unsupported (cannot execute)</string>
+    <string name="model_label">Model</string>
+    <string name="refresh">Refresh</string>
+    <string name="settings">Settings</string>
+    <string name="shizuku_connected">Connected</string>
+    <string name="shizuku_pending">Pending authorization</string>
+    <string name="shizuku_not_installed">Not installed</string>
+    <string name="no_shizuku_manager">No Shizuku Manager detected. Please install it first, then start service via adb or wireless debugging.</string>
+    <string name="download_shizuku">Download Shizuku</string>
+    <string name="open_shizuku">Open Shizuku</string>
+    <string name="shizuku_auth_instruction">Click "Request Authorization" to add this app to Shizuku pending list, then tap "Allow" in Shizuku.</string>
+    <string name="request_auth">Request Authorization</string>
+    <string name="exploit_pipeline">Exploit Pipeline</string>
+    <string name="current_action">Current Action</string>
+    <string name="waiting_to_start">Waiting to start</string>
+    <string name="pending">Pending</string>
+    <string name="running">Running</string>
+    <string name="ok">OK</string>
+    <string name="degraded">Degraded</string>
+    <string name="failed">Failed</string>
+    <string name="skipped">Skipped</string>
+    <string name="copied_logs">Copied %d log lines</string>
+    <string name="no_logs_to_copy">No logs to copy</string>
+    <string name="terminal">Terminal</string>
+    <string name="idle">Idle</string>
+    <string name="waiting_to_execute">Waiting to execute…</string>
 </resources>

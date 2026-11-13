@@ -1,6 +1,10 @@
 import java.io.FileInputStream
 import java.security.MessageDigest
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -82,6 +86,21 @@ android {
     compileSdk = 37
     compileSdkMinor = 2
 
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(25))
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.6.10"
+    }
+
     defaultConfig {
         // 正式版：包名不带 .test 后缀，与测试线可并存安装（见 testVariantSuffix 的说明）
         applicationId = "com.EternalTimes.GhostKey$testVariantSuffix"
@@ -134,8 +153,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_27
-        targetCompatibility = JavaVersion.VERSION_27
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
 
     buildFeatures {
@@ -149,7 +168,7 @@ android {
         // Manifest 中的声明是 Shizuku 模式要求，Instantiatable 检查在此属误报
         disable += "Instantiatable"
         toolchain {
-            languageVersion.set(JavaLanguageVersion.of(27))
+            languageVersion.set(JavaLanguageVersion.of(25))
         }
     }
 
@@ -185,13 +204,7 @@ android {
 // AGP 9 内置 Kotlin：kotlinOptions DSL 已移除，改用顶层 kotlin{} 的 compilerOptions
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_27)
-    }
-}
-
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(27))
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
     }
 }
 
@@ -274,4 +287,16 @@ dependencies {
 
     // 单测：StageTracker 的纯逻辑验证
     testImplementation("junit:junit:4.13.2")
+}
+
+// Force JVM target 25 for ALL Kotlin compile tasks (including KSP, Compose, etc.)
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+}
+
+// Also configure in afterEvaluate to catch any tasks created later (e.g., by Compose compiler plugin)
+afterEvaluate {
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+    }
 }

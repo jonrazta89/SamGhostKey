@@ -875,6 +875,14 @@ def render_json(p, page_offset=-551903297536):
     """
     import json as _json
     o = p["offsets"]
+    notes = (
+        "BTF 驱动生成；kitimer_size/kitimer_node/cred 布局按本机 BTF 校正；"
+        "timer_link/cred_link/task_alloc_link 取本镜像内 kmem_cache_alloc 调用点的返回地址"
+        "（BL+4，即 tracepoint 记的 _RET_IP_），不是函数基址；"
+        "page_offset 是兜底值，以 calibrate-b 运行时扫描结果为准"
+    )
+    if p.get("anchor_notes"):
+        notes += "；" + "；".join(p["anchor_notes"])
     doc = {
         "release": p["release"],
         "vuln_type": "cve-2026-98260",

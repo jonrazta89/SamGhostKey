@@ -8,7 +8,7 @@ sealed class KsuSource {
     data class DeviceManager(val packageName: String, val versionName: String?) : KsuSource()
 
     /** 回退到 APK 内置的 ksud。 */
-    data class Bundled(val note: String = "内置 ksud") : KsuSource()
+    data class Bundled(val note: String = "Bundled ksud") : KsuSource()
 
     /** 均不可用。 */
     data class Unavailable(val reason: String) : KsuSource()
@@ -137,9 +137,9 @@ class KsuResolver(private val context: Context) {
 
     fun label(source: KsuSource): String = when (source) {
         is KsuSource.DeviceManager ->
-            "设备管理器 ${source.packageName}" + (source.versionName?.let { " v$it" } ?: "")
+            "Device manager ${source.packageName}" + (source.versionName?.let { " v$it" } ?: "")
         is KsuSource.Bundled -> source.note
-        is KsuSource.Unavailable -> "不可用：${source.reason}"
+        is KsuSource.Unavailable -> "Unavailable: ${source.reason}"
     }
 
     private companion object {

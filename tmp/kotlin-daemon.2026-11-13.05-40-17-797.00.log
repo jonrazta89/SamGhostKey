@@ -1,0 +1,554 @@
+2026-11-13 05:40:17.863 [daemon] INFO: Kotlin compiler daemon version 2.5.0-Beta2
+2026-11-13 05:40:17.916 [daemon] INFO: daemon JVM args: -Djava.awt.headless=true -Djava.rmi.server.hostname=127.0.0.1 -Xmx2048m -XX:ReservedCodeCacheSize=320m -Dkotlin.environment.keepalive -ea -Dkotlin.daemon.custom.run.files.path.for.tests=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp -XX:+UseCodeCacheFlushing -XX:+UseParallelGC -Dkotlin.daemon.initiator.marker.file=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-1341279446283554981-is-running --add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+2026-11-13 05:40:17.917 [daemon] INFO: daemon args: --daemon-logsPath /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp --daemon-logsFileSizeLimit=1048576 --daemon-logsFileCountLimit=3 --daemon-runFilesPath /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp --daemon-autoshutdownIdleSeconds=7200 --daemon-compilerClasspath /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-compat/2.5.0-Beta2/44d4b30285fe36d42e541e510544fd071df8322/kotlin-build-tools-compat-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-impl/2.5.0-Beta2/3b65a13299233fb507fc34a0fb6205b93dc2dca0/kotlin-build-tools-impl-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-tooling-core/2.5.0-Beta2/5028a3cd40ccc1f450cb3fbde6d6c83d2015c955/kotlin-tooling-core-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-cri-impl/2.5.0-Beta2/85dd48e62630c87ba0de72ca693e4e63f06d6147/kotlin-build-tools-cri-impl-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compiler-runner/2.5.0-Beta2/ed3ff267e54392c2229bf0cae5c886076edb7e7b/kotlin-compiler-runner-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compiler-embeddable/2.5.0-Beta2/332f9e5c37b4eebe71cadb8424d24ab3668f43ae/kotlin-compiler-embeddable-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-api/2.5.0-Beta2/b8b1649307edb516447ac57f7ed71009882034c7/kotlin-build-tools-api-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-daemon-client/2.5.0-Beta2/14af5b2a5ac3b08413ae37b76cbae6f2ee1b6f56/kotlin-daemon-client-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.5.0-Beta2/52dead84884dec9e445c353759d08cc2ccf496fd/kotlin-stdlib-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/typescript-export-standalone-embeddable/2.5.0-Beta2/bf8e5c52886638ad810499d9f8762e86cac3e89a/typescript-export-standalone-embeddable-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains/annotations/13.0/919f0dfe192fb4e063e7dacadee7f8bb9a2672a9/annotations-13.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-reflect/1.6.10/1cbe9c92c12a94eea200d23c2bbaedaf3daf5132/kotlin-reflect-1.6.10.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-daemon-embeddable/2.5.0-Beta2/724d4b95dee5050627c3246628b0c586a1abd6bf/kotlin-daemon-embeddable-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.8.0/ac1dc37a30a93150b704022f8d895ee1bd3a36b3/kotlinx-coroutines-core-jvm-1.8.0.jar
+2026-11-13 05:40:17.951 [daemon] INFO: starting daemon
+2026-11-13 05:40:18.125 [compiler] INFO: Registered a client alive file: /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-1341279446283554981-is-running
+2026-11-13 05:40:18.128 [compiler] INFO: Periodic liveness check activities configured
+2026-11-13 05:40:18.130 [daemon] INFO: daemon is listening on port: 17923
+2026-11-13 05:40:18.135 [compiler] INFO: initiate elections
+2026-11-13 05:40:18.307 [compiler] INFO: getDaemonJVMOptions: DaemonJVMOptions(maxMemory=2048m, maxMetaspaceSize=, reservedCodeCacheSize=320m, jvmParams=[-Djava.awt.headless=true, -Djava.rmi.server.hostname=127.0.0.1, -Dkotlin.environment.keepalive, -ea, -Dkotlin.daemon.custom.run.files.path.for.tests=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp, -XX:+UseCodeCacheFlushing, -XX:+UseParallelGC, -Dkotlin.daemon.initiator.marker.file=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-1341279446283554981-is-running, --add-exports=java.base/sun.nio.ch=ALL-UNNAMED, Dkotlin.environment.keepalive, ea])
+2026-11-13 05:40:18.322 [compiler] INFO: Registered a client alive file: /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-1341279446283554981-is-running
+2026-11-13 05:40:18.328 [compiler] INFO: leased a new session 1, session alive file: /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compilation-session-15987252557885516149-is-running
+2026-11-13 05:40:18.677 [compiler] INFO: Starting compilation with args: -Xallow-no-source-files -Xallow-unstable-dependencies -classpath /data/user/0/com.androidharness.app/files/linux/home/android-sdk/platforms/android-37.2/android.jar:/data/user/0/com.androidharness.app/files/linux/home/android-sdk/build-tools/36.0.0/core-lambda-stubs.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/715a1534e3f4288cf6eb96ff4a09d469/transformed/activity-1.9.3-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/54d98ea84821294f8a86a61b114d8521/transformed/activity-ktx-1.9.3-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/ec5407a8681ab3d93389e3e7f24da0a7/transformed/activity-compose-1.9.3-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/22afa8475f21aa98729925a7d9a3c1c3/transformed/core-ktx-1.13.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/6c8c7e1aeb3c3918aa50daa36815af0c/transformed/core-1.13.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/9259ffec5bcdc982e0fc00fcbafefc07/transformed/lifecycle-runtime-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7cbd7a754d4a6b07d20be7ef3b289f64/transformed/lifecycle-livedata-core-2.8.6-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.lifecycle/lifecycle-common-jvm/2.8.6/7174a594afb73a9ad9ac9074ce78b94af3cc52a7/lifecycle-common-jvm-2.8.6.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/938f76f7d73beeeb66e656df6ae842c6/transformed/lifecycle-viewmodel-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/57405369b793ee5759468beea7374b93/transformed/lifecycle-viewmodel-savedstate-2.8.6-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/822ab53146625b0d74a44dc13697f6ae/transformed/lifecycle-viewmodel-ktx-2.8.6-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/b7fbbe48a84501b10947e53357f30845/transformed/lifecycle-runtime-ktx-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/fe882f1b57661681281411b941af3e1e/transformed/material3-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/3472c90d08b48c7a83746110d124baf5/transformed/ui-util-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/e4063b791bfd0357db12fbc9808e7eda/transformed/ui-unit-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/110f06fdcad195ad5a14a7ef4d97c2c9/transformed/foundation-layout-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/ae8e285fa25e478a92e26e0d87c6d17b/transformed/material-ripple-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/fda30e35a3b88efc8203588eb9a6ad98/transformed/foundation-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/cb8e2313c3de152aedd4c82c90488cdc/transformed/animation-core-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7cadf5544968295bcdd220751ba15aba/transformed/animation-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/fb162fce206d4d020bd483aafde196b7/transformed/ui-geometry-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7575ad2a4bdea287f6fbb5c5e0400e53/transformed/ui-text-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/957c305df8ed7c9a93c785b15e6005b6/transformed/ui-tooling-preview-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7d19db991fb6c07835511196179e9472/transformed/ui-graphics-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/2e31f94458a34f671335271b010af593/transformed/material-icons-core-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/5d4bbf394817e17b90e402ec2e17fbeb/transformed/ui-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/db54f7d501df247515fe86dc51c7bdac/transformed/lifecycle-runtime-compose-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/22da1456980e31115052b84fe54c712f/transformed/lifecycle-viewmodel-compose-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/349685f2511acf24f9a34f06de888f7c/transformed/runtime-saveable-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/510d14e74229266e0899b036f9b61ae0/transformed/runtime-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.8.1/bb0e192bd7c2b6b8217440d36e9758e377e450/kotlinx-coroutines-core-jvm-1.8.1.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-android/1.8.1/73e2acdd18df99dd4849d99f188dff529fc0afe0/kotlinx-coroutines-android-1.8.1.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/48d1bb288751036ea79a3ebb5252337a/transformed/savedstate-1.2.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/4b3e49cdeaaff7cb79eb9872fed2806d/transformed/savedstate-ktx-1.2.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/e9e7c08747a4f66d8e999a8c9d7988e4/transformed/annotation-experimental-1.4.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/f2ec6e37b3059ae6398c1af7decc7176/transformed/versionedparcelable-1.1.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.arch.core/core-common/2.2.0/5e1b8b81dfd5f52c56a8d53b18ca759c19a301f3/core-common-2.2.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.collection/collection-jvm/1.4.0/e209fb7bd1183032f55a0408121c6251a81acb49/collection-jvm-1.4.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.annotation/annotation-jvm/1.8.0/b8a16fe526014b7941c1debaccaf9c5153692dbb/annotation-jvm-1.8.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.5.0-Beta2/52dead84884dec9e445c353759d08cc2ccf496fd/kotlin-stdlib-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/a2a9cd6f9e7bd27ec5884ddf79801776/transformed/api-13.1.5-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/c042000e52cc42b3ff6050e884f98fc7/transformed/provider-13.1.5-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains/annotations/23.0.0/8cc20c07506ec18e0834947b84a864bfc094484e/annotations-23.0.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/188f03362e27830baa3a8d45eba6bdf6/transformed/aidl-13.1.5-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/8278a471167951689fdae8311ce0ea0b/transformed/shared-13.1.5-api.jar -d /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes -jdk-home /data/data/com.androidharness.app/files/linux/lib/jvm/java-25-openjdk -jvm-target 27 -module-name app -no-reflect -no-stdlib -Xuse-inline-scopes-numbers -Xenable-incremental-compilation -Xplugin=/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compose-compiler-plugin-embeddable/2.5.0-Beta2/5bc79092050e71f6dd1bddc34b4fb2ca66c432ed/kotlin-compose-compiler-plugin-embeddable-2.5.0-Beta2.jar -P plugin:androidx.compose.compiler.plugins.kotlin:sourceInformation=true,plugin:androidx.compose.compiler.plugins.kotlin:traceMarkersEnabled=true /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/generated/source/buildConfig/debug/com/EternalTimes/GhostKey/BuildConfig.java /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/generated/aidl_source_output_dir/debug/out/com/EternalTimes/GhostKey/shizuku/ICve98260Callback.java /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/generated/aidl_source_output_dir/debug/out/com/EternalTimes/GhostKey/shizuku/ICve98260UserService.java /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Cve98260Application.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Quietly.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/AssetConfigLoader.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/HoconSupport.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/LegacyProfileConverter.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileRepository.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/AllocCallSiteResolver.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/ImgToProfile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceBinding.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/KernelProbe.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/FailureDiagnoser.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/KernelProfile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/ShizukuStatus.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageState.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageTracker.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/KernelProfileSerializer.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/Cve98260UserService.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogTone.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainActivity.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/SettingsScreen.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/theme/Theme.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 05:41:03.387 [daemon] INFO: Message: logging: using Kotlin home directory <no_path>
+2026-11-13 05:41:03.388 [daemon] INFO: Message: logging: exception on loading scripting plugin: java.lang.ClassNotFoundException: org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingK2CompilerPluginRegistrar
+2026-11-13 05:41:03.393 [daemon] INFO: Message: logging: scripting plugin will not be loaded: not all required jars are present in the classpath (missing files: [./kotlin-scripting-compiler.jar, ./kotlin-scripting-compiler-impl.jar, ./kotlin-scripting-common.jar, ./kotlin-scripting-jvm.jar])
+2026-11-13 05:41:03.393 [daemon] INFO: Message: logging: configuring the compilation environment
+2026-11-13 05:41:03.393 [daemon] INFO: Message: logging: using JDK home directory /data/data/com.androidharness.app/files/linux/lib/jvm/java-25-openjdk
+2026-11-13 05:41:03.394 [daemon] INFO: Message: logging: loading modules: [java.se, jdk.accessibility, jdk.attach, jdk.compiler, jdk.dynalink, jdk.httpserver, jdk.incubator.vector, jdk.jartool, jdk.javadoc, jdk.jconsole, jdk.jdi, jdk.jfr, jdk.jshell, jdk.jsobject, jdk.management, jdk.management.jfr, jdk.net, jdk.nio.mapmode, jdk.sctp, jdk.security.auth, jdk.security.jgss, jdk.unsupported, jdk.unsupported.desktop, jdk.xml.dom, java.base, java.compiler, java.datatransfer, java.desktop, java.xml, java.instrument, java.logging, java.management, java.management.rmi, java.rmi, java.naming, java.net.http, java.prefs, java.scripting, java.security.jgss, java.security.sasl, java.sql, java.transaction.xa, java.sql.rowset, java.xml.crypto, jdk.internal.jvmstat, jdk.internal.opt, jdk.zipfs, jdk.internal.md, jdk.management.agent, jdk.jdwp.agent, jdk.internal.ed, jdk.internal.le]
+2026-11-13 05:41:03.394 [daemon] INFO: Message: error: argument type mismatch: actual type is 'String', but 'Throwable?' was expected.
+                    "device=$product/$device)，忽略",
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-11-13 05:41:03.435 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.437 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                    ^
+2026-11-13 05:41:03.441 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.run_logs_title),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.442 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.run_logs_title),
+                                   ^
+2026-11-13 05:41:03.443 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    if (runs.isEmpty()) stringResource(R.string.no_runs) else stringResource(R.string.runs_count, runs.size),
+                                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.449 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    if (runs.isEmpty()) stringResource(R.string.no_runs) else stringResource(R.string.runs_count, runs.size),
+                                                       ^
+2026-11-13 05:41:03.451 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    if (runs.isEmpty()) stringResource(R.string.no_runs) else stringResource(R.string.runs_count, runs.size),
+                                                                              ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.452 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    if (runs.isEmpty()) stringResource(R.string.no_runs) else stringResource(R.string.runs_count, runs.size),
+                                                                                             ^
+2026-11-13 05:41:03.453 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.export_all), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.457 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.export_all), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                    ^
+2026-11-13 05:41:03.458 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    Text(stringResource(R.string.no_run_logs), color = CvePalette.TextMuted)
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.459 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    Text(stringResource(R.string.no_run_logs), color = CvePalette.TextMuted)
+                                        ^
+2026-11-13 05:41:03.460 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        stringResource(R.string.logs_hint_detail),
+                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.465 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        stringResource(R.string.logs_hint_detail),
+                                       ^
+2026-11-13 05:41:03.466 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                                stringResource(R.string.clear_all_logs),
+                                ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.467 [daemon] INFO: Message: error: unresolved reference 'R'.
+                                stringResource(R.string.clear_all_logs),
+                                               ^
+2026-11-13 05:41:03.468 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            title = { Text(stringResource(R.string.confirm_clear_logs)) },
+                           ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.469 [daemon] INFO: Message: error: unresolved reference 'R'.
+            title = { Text(stringResource(R.string.confirm_clear_logs)) },
+                                          ^
+2026-11-13 05:41:03.477 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.clear_logs_warning, runs.size))
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.478 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.clear_logs_warning, runs.size))
+                                    ^
+2026-11-13 05:41:03.479 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                }) { Text(stringResource(R.string.clear), color = CvePalette.Danger) }
+                          ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.480 [daemon] INFO: Message: error: unresolved reference 'R'.
+                }) { Text(stringResource(R.string.clear), color = CvePalette.Danger) }
+                                         ^
+2026-11-13 05:41:03.481 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    Text(stringResource(R.string.cancel), color = CvePalette.TextSecondary)
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.482 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    Text(stringResource(R.string.cancel), color = CvePalette.TextSecondary)
+                                        ^
+2026-11-13 05:41:03.488 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.run_number, meta.runId),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.489 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.run_number, meta.runId),
+                                   ^
+2026-11-13 05:41:03.493 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.494 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                    ^
+2026-11-13 05:41:03.495 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.run_number, meta.runId),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.496 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.run_number, meta.runId),
+                                   ^
+2026-11-13 05:41:03.501 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        toast(context, stringResource(R.string.content_not_loaded))
+                                       ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.502 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        toast(context, stringResource(R.string.content_not_loaded))
+                                                      ^
+2026-11-13 05:41:03.503 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        toast(context, stringResource(R.string.copied))
+                                       ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.504 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        toast(context, stringResource(R.string.copied))
+                                                      ^
+2026-11-13 05:41:03.509 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.copy), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.510 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.copy), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                    ^
+2026-11-13 05:41:03.511 [daemon] INFO: Message: error: cannot infer type for type parameter 'K'. Specify it explicitly.
+                Text(stringResource(R.string.copy), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                             ^^^^
+2026-11-13 05:41:03.512 [daemon] INFO: Message: error: cannot infer type for type parameter 'V'. Specify it explicitly.
+                Text(stringResource(R.string.copy), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                             ^^^^
+2026-11-13 05:41:03.513 [daemon] INFO: Message: error: this declaration needs opt-in. Its usage must be marked with '@kotlin.ExperimentalStdlibApi' or '@OptIn(kotlin.ExperimentalStdlibApi::class)'
+                Text(stringResource(R.string.copy), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                             ^^^^
+2026-11-13 05:41:03.521 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    toast(context, if (name != null) stringResource(R.string.exported_to_download, name) else stringResource(R.string.export_failed))
+                                                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.522 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    toast(context, if (name != null) stringResource(R.string.exported_to_download, name) else stringResource(R.string.export_failed))
+                                                                    ^
+2026-11-13 05:41:03.523 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    toast(context, if (name != null) stringResource(R.string.exported_to_download, name) else stringResource(R.string.export_failed))
+                                                                                                              ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.524 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    toast(context, if (name != null) stringResource(R.string.exported_to_download, name) else stringResource(R.string.export_failed))
+                                                                                                                             ^
+2026-11-13 05:41:03.525 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.export), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.525 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.export), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                    ^
+2026-11-13 05:41:03.526 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            infoLine(stringResource(R.string.device_label), meta.device)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.527 [daemon] INFO: Message: error: unresolved reference 'R'.
+            infoLine(stringResource(R.string.device_label), meta.device)
+                                    ^
+2026-11-13 05:41:03.528 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            infoLine(stringResource(R.string.kernel_label), meta.kernel)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.529 [daemon] INFO: Message: error: unresolved reference 'R'.
+            infoLine(stringResource(R.string.kernel_label), meta.kernel)
+                                    ^
+2026-11-13 05:41:03.532 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            infoLine(stringResource(R.string.profile_label), meta.profile)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.537 [daemon] INFO: Message: error: unresolved reference 'R'.
+            infoLine(stringResource(R.string.profile_label), meta.profile)
+                                    ^
+2026-11-13 05:41:03.538 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.loading), color = CvePalette.TextMuted)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.539 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.loading), color = CvePalette.TextMuted)
+                                    ^
+2026-11-13 05:41:03.539 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.no_logs_this_run), color = CvePalette.TextMuted)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.540 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.no_logs_this_run), color = CvePalette.TextMuted)
+                                    ^
+2026-11-13 05:41:03.541 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                                stringResource(R.string.delete_this_run),
+                                ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.549 [daemon] INFO: Message: error: unresolved reference 'R'.
+                                stringResource(R.string.delete_this_run),
+                                               ^
+2026-11-13 05:41:03.550 [daemon] INFO: Message: error: unresolved reference 'appContext'.
+            !uiState.matchedProfile.startsWith(UNMATCHED_PREFIX) && uiState.matchedProfile != appContext.getString(R.string.detecting)
+                                                                                              ^^^^^^^^^^
+2026-11-13 05:41:03.551 [daemon] INFO: Message: error: functions which invoke @Composable functions must be marked with the @Composable annotation
+private fun shizukuPillText(status: ShizukuStatus): String = when (status) {
+            ^^^^^^^^^^^^^^^
+2026-11-13 05:41:03.551 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    ShizukuStatus.READY -> stringResource(R.string.shizuku_connected)
+                           ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.552 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    ShizukuStatus.PERMISSION_REQUIRED -> stringResource(R.string.shizuku_pending)
+                                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.553 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    ShizukuStatus.NOT_RUNNING -> stringResource(R.string.shizuku_not_running)
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.554 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    ShizukuStatus.NOT_INSTALLED -> stringResource(R.string.shizuku_not_installed)
+                                   ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.555 [daemon] INFO: Message: error: functions which invoke @Composable functions must be marked with the @Composable annotation
+private fun durationLabel(state: StageState, ms: Long): String = when (state) {
+            ^^^^^^^^^^^^^
+2026-11-13 05:41:03.556 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    StageState.PENDING -> stringResource(R.string.waiting_to_execute)
+                          ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.561 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    StageState.FAILED -> stringResource(R.string.failed) + " · ${formatDuration(ms)}"
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.562 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    StageState.SKIPPED -> stringResource(R.string.skipped)
+                          ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.563 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    StageState.STOPPED -> stringResource(R.string.stopped) + " · ${formatDuration(ms)}"
+                          ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.564 [daemon] INFO: Message: error: functions which invoke @Composable functions must be marked with the @Composable annotation
+private fun statusLabel(raw: String): String = when (raw) {
+            ^^^^^^^^^^^
+2026-11-13 05:41:03.565 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "running" -> stringResource(R.string.running)
+                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.569 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "ok" -> stringResource(R.string.ok)
+            ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.570 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "degraded" -> stringResource(R.string.degraded)
+                  ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.570 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "failed" -> stringResource(R.string.failed)
+                ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.571 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "skipped" -> stringResource(R.string.skipped)
+                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.572 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "成功" -> stringResource(R.string.ok)
+            ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.577 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "失败" -> stringResource(R.string.failed)
+            ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.578 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "已停止" -> stringResource(R.string.stopped)
+             ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.579 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "启动中" -> stringResource(R.string.starting)
+             ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.580 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+    "就绪" -> stringResource(R.string.ready)
+            ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.585 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+            Toast.makeText(context, stringResource(R.string.copied_logs, logs.size), Toast.LENGTH_SHORT).show()
+                                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.586 [daemon] INFO: Message: error: @Composable invocations can only happen from the context of a @Composable function
+            Toast.makeText(context, stringResource(R.string.no_logs_to_copy), Toast.LENGTH_SHORT).show()
+                                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.586 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Toast.makeText(context, stringResource(R.string.exported_to_download, queryDisplayName(context, uri)), Toast.LENGTH_SHORT).show()
+                                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.587 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Toast.makeText(context, stringResource(R.string.exported_to_download, queryDisplayName(context, uri)), Toast.LENGTH_SHORT).show()
+                                                       ^
+2026-11-13 05:41:03.588 [daemon] INFO: Message: error: unresolved reference 'show'.
+                Toast.makeText(context, stringResource(R.string.exported_to_download, queryDisplayName(context, uri)), Toast.LENGTH_SHORT).show()
+                                                                                                                                           ^^^^
+2026-11-13 05:41:03.589 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Toast.makeText(context, stringResource(R.string.export_failed, it.message), Toast.LENGTH_SHORT).show()
+                                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.590 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Toast.makeText(context, stringResource(R.string.export_failed, it.message), Toast.LENGTH_SHORT).show()
+                                                       ^
+2026-11-13 05:41:03.595 [daemon] INFO: Message: error: unresolved reference 'show'.
+                Toast.makeText(context, stringResource(R.string.export_failed, it.message), Toast.LENGTH_SHORT).show()
+                                                                                                                ^^^^
+2026-11-13 05:41:03.596 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.598 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.back), color = CvePalette.Accent, style = MaterialTheme.typography.labelLarge)
+                                    ^
+2026-11-13 05:41:03.599 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, color = CvePalette.TextPrimary)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.600 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, color = CvePalette.TextPrimary)
+                                    ^
+2026-11-13 05:41:03.601 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.kernel_profiles_subtitle),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.604 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.kernel_profiles_subtitle),
+                                   ^
+2026-11-13 05:41:03.605 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            SettingsCard(title = stringResource(R.string.kernel_profiles)) {
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.606 [daemon] INFO: Message: error: unresolved reference 'R'.
+            SettingsCard(title = stringResource(R.string.kernel_profiles)) {
+                                                ^
+2026-11-13 05:41:03.608 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.current_profile) + (selected ?: stringResource(R.string.auto_adapt_current)),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.608 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.current_profile) + (selected ?: stringResource(R.string.auto_adapt_current)),
+                                   ^
+2026-11-13 05:41:03.613 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.current_profile) + (selected ?: stringResource(R.string.auto_adapt_current)),
+                                                                            ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.614 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.current_profile) + (selected ?: stringResource(R.string.auto_adapt_current)),
+                                                                                           ^
+2026-11-13 05:41:03.614 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.device_kernel, uiState.kernelRelease),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.615 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.device_kernel, uiState.kernelRelease),
+                                   ^
+2026-11-13 05:41:03.616 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.matched_profile, uiState.matchedProfile),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.621 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.matched_profile, uiState.matchedProfile),
+                                   ^
+2026-11-13 05:41:03.622 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        Text(stringResource(R.string.select_kernel))
+                             ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.623 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        Text(stringResource(R.string.select_kernel))
+                                            ^
+2026-11-13 05:41:03.624 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        Text(stringResource(R.string.export_current_profile))
+                             ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.624 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        Text(stringResource(R.string.export_current_profile))
+                                            ^
+2026-11-13 05:41:03.625 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.export_filename_version, appVersion(context)),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.626 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.export_filename_version, appVersion(context)),
+                                   ^
+2026-11-13 05:41:03.627 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            SettingsCard(title = stringResource(R.string.import_profile)) {
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.633 [daemon] INFO: Message: error: unresolved reference 'R'.
+            SettingsCard(title = stringResource(R.string.import_profile)) {
+                                                ^
+2026-11-13 05:41:03.633 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.import_description),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.634 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.import_description),
+                                   ^
+2026-11-13 05:41:03.635 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    Text(stringResource(R.string.import_boot_img))
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.636 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    Text(stringResource(R.string.import_boot_img))
+                                        ^
+2026-11-13 05:41:03.636 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    Text(stringResource(R.string.import_json_hocon))
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.637 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    Text(stringResource(R.string.import_json_hocon))
+                                        ^
+2026-11-13 05:41:03.638 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        uiState.importMessage.contains(stringResource(R.string.import_failed).split(":")[0]) -> CvePalette.Danger
+                                                       ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.639 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        uiState.importMessage.contains(stringResource(R.string.import_failed).split(":")[0]) -> CvePalette.Danger
+                                                                      ^
+2026-11-13 05:41:03.643 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        uiState.importMessage.contains(stringResource(R.string.profile_missing_fields).split(":")[0]) -> CvePalette.Warning
+                                                       ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.644 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        uiState.importMessage.contains(stringResource(R.string.profile_missing_fields).split(":")[0]) -> CvePalette.Warning
+                                                                      ^
+2026-11-13 05:41:03.645 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            SettingsCard(title = stringResource(R.string.imported_profiles, stored.size)) {
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.648 [daemon] INFO: Message: error: unresolved reference 'R'.
+            SettingsCard(title = stringResource(R.string.imported_profiles, stored.size)) {
+                                                ^
+2026-11-13 05:41:03.649 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    Text(stringResource(R.string.no_profiles_yet), color = CvePalette.TextMuted, style = MaterialTheme.typography.bodySmall)
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.650 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    Text(stringResource(R.string.no_profiles_yet), color = CvePalette.TextMuted, style = MaterialTheme.typography.bodySmall)
+                                        ^
+2026-11-13 05:41:03.652 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                                    if (sp.complete) stringResource(R.string.profile_fields_complete) else stringResource(R.string.profile_missing_fields, sp.missing.joinToString()),
+                                                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.652 [daemon] INFO: Message: error: unresolved reference 'R'.
+                                    if (sp.complete) stringResource(R.string.profile_fields_complete) else stringResource(R.string.profile_missing_fields, sp.missing.joinToString()),
+                                                                    ^
+2026-11-13 05:41:03.656 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                                    if (sp.complete) stringResource(R.string.profile_fields_complete) else stringResource(R.string.profile_missing_fields, sp.missing.joinToString()),
+                                                                                                           ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.661 [daemon] INFO: Message: error: unresolved reference 'R'.
+                                    if (sp.complete) stringResource(R.string.profile_fields_complete) else stringResource(R.string.profile_missing_fields, sp.missing.joinToString()),
+                                                                                                                          ^
+2026-11-13 05:41:03.662 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                                Text(stringResource(R.string.delete), color = CvePalette.Danger, style = MaterialTheme.typography.labelLarge)
+                                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.662 [daemon] INFO: Message: error: unresolved reference 'R'.
+                                Text(stringResource(R.string.delete), color = CvePalette.Danger, style = MaterialTheme.typography.labelLarge)
+                                                    ^
+2026-11-13 05:41:03.668 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            SettingsCard(title = stringResource(R.string.root_manager)) {
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.668 [daemon] INFO: Message: error: unresolved reference 'R'.
+            SettingsCard(title = stringResource(R.string.root_manager)) {
+                                                ^
+2026-11-13 05:41:03.669 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.detected) + when {
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.671 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.detected) + when {
+                                   ^
+2026-11-13 05:41:03.671 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        scanning -> stringResource(R.string.scanning_managers)
+                                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.672 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        scanning -> stringResource(R.string.scanning_managers)
+                                                   ^
+2026-11-13 05:41:03.673 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        uiState.managerScanError.isNotBlank() -> stringResource(R.string.scan_error, uiState.managerScanError)
+                                                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.681 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        uiState.managerScanError.isNotBlank() -> stringResource(R.string.scan_error, uiState.managerScanError)
+                                                                                ^
+2026-11-13 05:41:03.682 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        else -> uiState.detectedManager.ifBlank { stringResource(R.string.no_managers_found) }
+                                                                  ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.683 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        else -> uiState.detectedManager.ifBlank { stringResource(R.string.no_managers_found) }
+                                                                                 ^
+2026-11-13 05:41:03.683 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.ksu_source) + when {
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.684 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.ksu_source) + when {
+                                   ^
+2026-11-13 05:41:03.684 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        scanning -> stringResource(R.string.scanning_managers)
+                                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.685 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        scanning -> stringResource(R.string.scanning_managers)
+                                                   ^
+2026-11-13 05:41:03.686 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        else -> uiState.ksuSourceLabel.ifBlank { stringResource(R.string.ksu_source_bundled) }
+                                                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.692 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        else -> uiState.ksuSourceLabel.ifBlank { stringResource(R.string.ksu_source_bundled) }
+                                                                                ^
+2026-11-13 05:41:03.693 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        Text(stringResource(R.string.rescan))
+                             ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.694 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        Text(stringResource(R.string.rescan))
+                                            ^
+2026-11-13 05:41:03.695 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                            Text(stringResource(R.string.select_manager))
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.695 [daemon] INFO: Message: error: unresolved reference 'R'.
+                            Text(stringResource(R.string.select_manager))
+                                                ^
+2026-11-13 05:41:03.696 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        stringResource(R.string.current_selection, uiState.selectedManagerPackage ?: stringResource(R.string.auto_priority_first)),
+                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.697 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        stringResource(R.string.current_selection, uiState.selectedManagerPackage ?: stringResource(R.string.auto_priority_first)),
+                                       ^
+2026-11-13 05:41:03.698 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        stringResource(R.string.current_selection, uiState.selectedManagerPackage ?: stringResource(R.string.auto_priority_first)),
+                                                                                                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.699 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        stringResource(R.string.current_selection, uiState.selectedManagerPackage ?: stringResource(R.string.auto_priority_first)),
+                                                                                                                    ^
+2026-11-13 05:41:03.699 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        stringResource(R.string.manager_detected_explanation, cands.size),
+                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.701 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        stringResource(R.string.manager_detected_explanation, cands.size),
+                                       ^
+2026-11-13 05:41:03.702 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                        stringResource(R.string.prefer_device_ksud_explanation),
+                        ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.703 [daemon] INFO: Message: error: unresolved reference 'R'.
+                        stringResource(R.string.prefer_device_ksud_explanation),
+                                       ^
+2026-11-13 05:41:03.704 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            SettingsCard(title = stringResource(R.string.logs)) {
+                                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.705 [daemon] INFO: Message: error: unresolved reference 'R'.
+            SettingsCard(title = stringResource(R.string.logs)) {
+                                                ^
+2026-11-13 05:41:03.705 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    Text(stringResource(R.string.view_run_logs, runCount))
+                         ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.706 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    Text(stringResource(R.string.view_run_logs, runCount))
+                                        ^
+2026-11-13 05:41:03.707 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    stringResource(R.string.run_logs_description),
+                    ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.707 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    stringResource(R.string.run_logs_description),
+                                   ^
+2026-11-13 05:41:03.709 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.cancel), color = CvePalette.TextMuted)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.710 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.cancel), color = CvePalette.TextMuted)
+                                    ^
+2026-11-13 05:41:03.711 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            Text(stringResource(R.string.select_target_profile), color = CvePalette.TextPrimary)
+                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.718 [daemon] INFO: Message: error: unresolved reference 'R'.
+            Text(stringResource(R.string.select_target_profile), color = CvePalette.TextPrimary)
+                                ^
+2026-11-13 05:41:03.718 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    val label = opt ?: stringResource(R.string.auto_adapt_current)
+                                       ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.719 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    val label = opt ?: stringResource(R.string.auto_adapt_current)
+                                                      ^
+2026-11-13 05:41:03.720 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                Text(stringResource(R.string.cancel), color = CvePalette.TextMuted)
+                     ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.720 [daemon] INFO: Message: error: unresolved reference 'R'.
+                Text(stringResource(R.string.cancel), color = CvePalette.TextMuted)
+                                    ^
+2026-11-13 05:41:03.721 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+            Text(stringResource(R.string.select_takeover_manager), color = CvePalette.TextPrimary)
+                 ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.722 [daemon] INFO: Message: error: unresolved reference 'R'.
+            Text(stringResource(R.string.select_takeover_manager), color = CvePalette.TextPrimary)
+                                ^
+2026-11-13 05:41:03.723 [daemon] INFO: Message: error: unresolved reference 'stringResource'.
+                    val label = opt?.label ?: stringResource(R.string.auto_priority_first)
+                                              ^^^^^^^^^^^^^^
+2026-11-13 05:41:03.729 [daemon] INFO: Message: error: unresolved reference 'R'.
+                    val label = opt?.label ?: stringResource(R.string.auto_priority_first)
+                                                             ^
+2026-11-13 05:41:03.738 [compiler] INFO: Done with result 1
+2026-11-13 05:41:22.616 [compiler] INFO: cleaning after session 1

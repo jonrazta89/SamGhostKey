@@ -1,0 +1,673 @@
+2026-11-13 06:47:04.122 [daemon] INFO: Kotlin compiler daemon version 2.5.0-Beta2
+2026-11-13 06:47:04.137 [daemon] INFO: daemon JVM args: -Djava.awt.headless=true -Djava.rmi.server.hostname=127.0.0.1 -Xmx2048m -XX:ReservedCodeCacheSize=320m -Dkotlin.environment.keepalive -ea -Dkotlin.daemon.custom.run.files.path.for.tests=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp -XX:+UseCodeCacheFlushing -XX:+UseParallelGC -Dkotlin.daemon.initiator.marker.file=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-8699378038685684319-is-running --add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+2026-11-13 06:47:04.137 [daemon] INFO: daemon args: --daemon-logsPath /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp --daemon-logsFileSizeLimit=1048576 --daemon-logsFileCountLimit=3 --daemon-runFilesPath /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp --daemon-autoshutdownIdleSeconds=7200 --daemon-compilerClasspath /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-compat/2.5.0-Beta2/44d4b30285fe36d42e541e510544fd071df8322/kotlin-build-tools-compat-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-impl/2.5.0-Beta2/3b65a13299233fb507fc34a0fb6205b93dc2dca0/kotlin-build-tools-impl-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-tooling-core/2.5.0-Beta2/5028a3cd40ccc1f450cb3fbde6d6c83d2015c955/kotlin-tooling-core-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-cri-impl/2.5.0-Beta2/85dd48e62630c87ba0de72ca693e4e63f06d6147/kotlin-build-tools-cri-impl-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compiler-runner/2.5.0-Beta2/ed3ff267e54392c2229bf0cae5c886076edb7e7b/kotlin-compiler-runner-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compiler-embeddable/2.5.0-Beta2/332f9e5c37b4eebe71cadb8424d24ab3668f43ae/kotlin-compiler-embeddable-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-build-tools-api/2.5.0-Beta2/b8b1649307edb516447ac57f7ed71009882034c7/kotlin-build-tools-api-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-daemon-client/2.5.0-Beta2/14af5b2a5ac3b08413ae37b76cbae6f2ee1b6f56/kotlin-daemon-client-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.5.0-Beta2/52dead84884dec9e445c353759d08cc2ccf496fd/kotlin-stdlib-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/typescript-export-standalone-embeddable/2.5.0-Beta2/bf8e5c52886638ad810499d9f8762e86cac3e89a/typescript-export-standalone-embeddable-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains/annotations/13.0/919f0dfe192fb4e063e7dacadee7f8bb9a2672a9/annotations-13.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-reflect/1.6.10/1cbe9c92c12a94eea200d23c2bbaedaf3daf5132/kotlin-reflect-1.6.10.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-daemon-embeddable/2.5.0-Beta2/724d4b95dee5050627c3246628b0c586a1abd6bf/kotlin-daemon-embeddable-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.8.0/ac1dc37a30a93150b704022f8d895ee1bd3a36b3/kotlinx-coroutines-core-jvm-1.8.0.jar
+2026-11-13 06:47:04.146 [daemon] INFO: starting daemon
+2026-11-13 06:47:04.194 [compiler] INFO: Registered a client alive file: /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-8699378038685684319-is-running
+2026-11-13 06:47:04.195 [compiler] INFO: Periodic liveness check activities configured
+2026-11-13 06:47:04.195 [daemon] INFO: daemon is listening on port: 17190
+2026-11-13 06:47:04.204 [compiler] INFO: initiate elections
+2026-11-13 06:47:04.229 [compiler] INFO: getDaemonJVMOptions: DaemonJVMOptions(maxMemory=2048m, maxMetaspaceSize=, reservedCodeCacheSize=320m, jvmParams=[-Djava.awt.headless=true, -Djava.rmi.server.hostname=127.0.0.1, -Dkotlin.environment.keepalive, -ea, -Dkotlin.daemon.custom.run.files.path.for.tests=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp, -XX:+UseCodeCacheFlushing, -XX:+UseParallelGC, -Dkotlin.daemon.initiator.marker.file=/data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-8699378038685684319-is-running, --add-exports=java.base/sun.nio.ch=ALL-UNNAMED, Dkotlin.environment.keepalive, ea])
+2026-11-13 06:47:04.235 [compiler] INFO: Registered a client alive file: /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compiler-client-8699378038685684319-is-running
+2026-11-13 06:47:04.237 [compiler] INFO: leased a new session 1, session alive file: /data/user/0/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/tmp/kotlin-compilation-session-1668631425020185733-is-running
+2026-11-13 06:47:04.304 [compiler] INFO: Starting compilation with args: -Xallow-no-source-files -Xallow-unstable-dependencies -classpath /data/user/0/com.androidharness.app/files/linux/home/android-sdk/platforms/android-37.2/android.jar:/data/user/0/com.androidharness.app/files/linux/home/android-sdk/build-tools/36.0.0/core-lambda-stubs.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/715a1534e3f4288cf6eb96ff4a09d469/transformed/activity-1.9.3-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/54d98ea84821294f8a86a61b114d8521/transformed/activity-ktx-1.9.3-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/ec5407a8681ab3d93389e3e7f24da0a7/transformed/activity-compose-1.9.3-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/22afa8475f21aa98729925a7d9a3c1c3/transformed/core-ktx-1.13.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/6c8c7e1aeb3c3918aa50daa36815af0c/transformed/core-1.13.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/9259ffec5bcdc982e0fc00fcbafefc07/transformed/lifecycle-runtime-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7cbd7a754d4a6b07d20be7ef3b289f64/transformed/lifecycle-livedata-core-2.8.6-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.lifecycle/lifecycle-common-jvm/2.8.6/7174a594afb73a9ad9ac9074ce78b94af3cc52a7/lifecycle-common-jvm-2.8.6.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/938f76f7d73beeeb66e656df6ae842c6/transformed/lifecycle-viewmodel-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/57405369b793ee5759468beea7374b93/transformed/lifecycle-viewmodel-savedstate-2.8.6-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/822ab53146625b0d74a44dc13697f6ae/transformed/lifecycle-viewmodel-ktx-2.8.6-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/b7fbbe48a84501b10947e53357f30845/transformed/lifecycle-runtime-ktx-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/fe882f1b57661681281411b941af3e1e/transformed/material3-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/3472c90d08b48c7a83746110d124baf5/transformed/ui-util-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/e4063b791bfd0357db12fbc9808e7eda/transformed/ui-unit-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/110f06fdcad195ad5a14a7ef4d97c2c9/transformed/foundation-layout-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/ae8e285fa25e478a92e26e0d87c6d17b/transformed/material-ripple-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/fda30e35a3b88efc8203588eb9a6ad98/transformed/foundation-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/cb8e2313c3de152aedd4c82c90488cdc/transformed/animation-core-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7cadf5544968295bcdd220751ba15aba/transformed/animation-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/fb162fce206d4d020bd483aafde196b7/transformed/ui-geometry-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7575ad2a4bdea287f6fbb5c5e0400e53/transformed/ui-text-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/957c305df8ed7c9a93c785b15e6005b6/transformed/ui-tooling-preview-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/7d19db991fb6c07835511196179e9472/transformed/ui-graphics-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/2e31f94458a34f671335271b010af593/transformed/material-icons-core-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/5d4bbf394817e17b90e402ec2e17fbeb/transformed/ui-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/db54f7d501df247515fe86dc51c7bdac/transformed/lifecycle-runtime-compose-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/22da1456980e31115052b84fe54c712f/transformed/lifecycle-viewmodel-compose-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/349685f2511acf24f9a34f06de888f7c/transformed/runtime-saveable-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/510d14e74229266e0899b036f9b61ae0/transformed/runtime-release-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.8.1/bb0e192bd7c2b6b8217440d36e9758e377e450/kotlinx-coroutines-core-jvm-1.8.1.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-android/1.8.1/73e2acdd18df99dd4849d99f188dff529fc0afe0/kotlinx-coroutines-android-1.8.1.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/48d1bb288751036ea79a3ebb5252337a/transformed/savedstate-1.2.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/4b3e49cdeaaff7cb79eb9872fed2806d/transformed/savedstate-ktx-1.2.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/e9e7c08747a4f66d8e999a8c9d7988e4/transformed/annotation-experimental-1.4.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/f2ec6e37b3059ae6398c1af7decc7176/transformed/versionedparcelable-1.1.1-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.arch.core/core-common/2.2.0/5e1b8b81dfd5f52c56a8d53b18ca759c19a301f3/core-common-2.2.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.collection/collection-jvm/1.4.0/e209fb7bd1183032f55a0408121c6251a81acb49/collection-jvm-1.4.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/androidx.annotation/annotation-jvm/1.8.0/b8a16fe526014b7941c1debaccaf9c5153692dbb/annotation-jvm-1.8.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.5.0-Beta2/52dead84884dec9e445c353759d08cc2ccf496fd/kotlin-stdlib-2.5.0-Beta2.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/a2a9cd6f9e7bd27ec5884ddf79801776/transformed/api-13.1.5-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/c042000e52cc42b3ff6050e884f98fc7/transformed/provider-13.1.5-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains/annotations/23.0.0/8cc20c07506ec18e0834947b84a864bfc094484e/annotations-23.0.0.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/188f03362e27830baa3a8d45eba6bdf6/transformed/aidl-13.1.5-api.jar:/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/9.8.2/transforms/8278a471167951689fdae8311ce0ea0b/transformed/shared-13.1.5-api.jar -d /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes -jdk-home /data/data/com.androidharness.app/files/linux/lib/jvm/java-25-openjdk -jvm-target 25 -module-name app -no-reflect -no-stdlib -Xuse-inline-scopes-numbers -Xenable-incremental-compilation -Xplugin=/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-compose-compiler-plugin-embeddable/2.5.0-Beta2/5bc79092050e71f6dd1bddc34b4fb2ca66c432ed/kotlin-compose-compiler-plugin-embeddable-2.5.0-Beta2.jar -P plugin:androidx.compose.compiler.plugins.kotlin:sourceInformation=true,plugin:androidx.compose.compiler.plugins.kotlin:traceMarkersEnabled=true /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/generated/source/buildConfig/debug/com/EternalTimes/GhostKey/BuildConfig.java /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/generated/aidl_source_output_dir/debug/out/com/EternalTimes/GhostKey/shizuku/ICve98260Callback.java /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/generated/aidl_source_output_dir/debug/out/com/EternalTimes/GhostKey/shizuku/ICve98260UserService.java /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Cve98260Application.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Quietly.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/AssetConfigLoader.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/HoconSupport.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/LegacyProfileConverter.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileRepository.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/AllocCallSiteResolver.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/ImgToProfile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceBinding.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/KernelProbe.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/FailureDiagnoser.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/KernelProfile.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/ShizukuStatus.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageState.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageTracker.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/KernelProfileSerializer.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/Cve98260UserService.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogTone.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainActivity.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/SettingsScreen.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/theme/Theme.kt /data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.506 [daemon] INFO: Message: logging: using Kotlin home directory <no_path>
+2026-11-13 06:47:16.507 [daemon] INFO: Message: logging: exception on loading scripting plugin: java.lang.ClassNotFoundException: org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingK2CompilerPluginRegistrar
+2026-11-13 06:47:16.507 [daemon] INFO: Message: logging: scripting plugin will not be loaded: not all required jars are present in the classpath (missing files: [./kotlin-scripting-compiler.jar, ./kotlin-scripting-compiler-impl.jar, ./kotlin-scripting-common.jar, ./kotlin-scripting-jvm.jar])
+2026-11-13 06:47:16.508 [daemon] INFO: Message: logging: configuring the compilation environment
+2026-11-13 06:47:16.508 [daemon] INFO: Message: logging: using JDK home directory /data/data/com.androidharness.app/files/linux/lib/jvm/java-25-openjdk
+2026-11-13 06:47:16.508 [daemon] INFO: Message: logging: loading modules: [java.se, jdk.accessibility, jdk.attach, jdk.compiler, jdk.dynalink, jdk.httpserver, jdk.incubator.vector, jdk.jartool, jdk.javadoc, jdk.jconsole, jdk.jdi, jdk.jfr, jdk.jshell, jdk.jsobject, jdk.management, jdk.management.jfr, jdk.net, jdk.nio.mapmode, jdk.sctp, jdk.security.auth, jdk.security.jgss, jdk.unsupported, jdk.unsupported.desktop, jdk.xml.dom, java.base, java.compiler, java.datatransfer, java.desktop, java.xml, java.instrument, java.logging, java.management, java.management.rmi, java.rmi, java.naming, java.net.http, java.prefs, java.scripting, java.security.jgss, java.security.sasl, java.sql, java.transaction.xa, java.sql.rowset, java.xml.crypto, jdk.internal.jvmstat, jdk.internal.opt, jdk.zipfs, jdk.internal.md, jdk.management.agent, jdk.jdwp.agent, jdk.internal.ed, jdk.internal.le]
+2026-11-13 06:47:16.508 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/Cve98260Application.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Cve98260Application.kt
+2026-11-13 06:47:16.512 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/Cve98260Application$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Cve98260Application.kt
+2026-11-13 06:47:16.512 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/QuietlyKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Quietly.kt
+2026-11-13 06:47:16.513 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/AssetConfigLoader.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/AssetConfigLoader.kt
+2026-11-13 06:47:16.513 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt
+2026-11-13 06:47:16.514 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt
+2026-11-13 06:47:16.514 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/HoconSupport.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/HoconSupport.kt
+2026-11-13 06:47:16.514 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/HoconSupport$HoconParseException.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/HoconSupport.kt
+2026-11-13 06:47:16.515 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/HoconSupport$Parser.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/HoconSupport.kt
+2026-11-13 06:47:16.515 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/LegacyProfileConverter.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/LegacyProfileConverter.kt
+2026-11-13 06:47:16.515 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ProfileDocument.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt
+2026-11-13 06:47:16.516 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ProfileDocument$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt
+2026-11-13 06:47:16.516 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ProfileConversionException.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt
+2026-11-13 06:47:16.516 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ProfileKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt
+2026-11-13 06:47:16.517 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ImportOutcome.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt
+2026-11-13 06:47:16.517 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ImportOutcome$Ok.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt
+2026-11-13 06:47:16.517 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ImportOutcome$Err.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt
+2026-11-13 06:47:16.517 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ProfileImportManager.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt
+2026-11-13 06:47:16.518 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ProfileRepository.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileRepository.kt
+2026-11-13 06:47:16.518 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunResult.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.518 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogMeta.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.519 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogStore.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.519 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogStore$listRuns$$inlined$sortedByDescending$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.519 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogStore$exportAllText$lambda$0$$inlined$sortedBy$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.519 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogStore$prune$$inlined$sortedBy$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.520 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogStore$Session.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.520 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/RunLogStore$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+2026-11-13 06:47:16.520 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/StoredProfile.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt
+2026-11-13 06:47:16.521 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/UserProfileStore.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt
+2026-11-13 06:47:16.521 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/UserProfileStore$list$$inlined$sortedBy$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt
+2026-11-13 06:47:16.521 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/UserProfileStore$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt
+2026-11-13 06:47:16.522 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/AllocCallSiteResolver.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/AllocCallSiteResolver.kt
+2026-11-13 06:47:16.522 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.522 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser$ExtractedKernelInfo.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.523 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser$StructOffsets.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.523 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser$TaskStructOffsets.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.523 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser$CredOffsets.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.523 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser$StructLayout.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.524 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParser$ImgExtractError.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.524 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/Btf.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.524 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/Btf$BtfType.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.524 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/Btf$BtfMember.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.525 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/GrowableBuffer.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.525 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/BootImageParserKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+2026-11-13 06:47:16.525 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/ImgToProfile.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/ImgToProfile.kt
+2026-11-13 06:47:16.525 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt
+2026-11-13 06:47:16.526 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor$KallsymsError.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt
+2026-11-13 06:47:16.526 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor$Result.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt
+2026-11-13 06:47:16.526 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor$NamesCand.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt
+2026-11-13 06:47:16.526 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/DeviceBinding.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceBinding.kt
+2026-11-13 06:47:16.526 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/DeviceBinding$KernelVer.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceBinding.kt
+2026-11-13 06:47:16.527 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/DeviceBinding$KernelSupport.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceBinding.kt
+2026-11-13 06:47:16.527 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/DeviceProfile.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt
+2026-11-13 06:47:16.527 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/DeviceProfile$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt
+2026-11-13 06:47:16.527 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/PageOffsetPlan.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt
+2026-11-13 06:47:16.528 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/DeviceProfilePolicy.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt
+2026-11-13 06:47:16.528 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/KernelProbe.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/KernelProbe.kt
+2026-11-13 06:47:16.528 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/PrivilegeGate.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt
+2026-11-13 06:47:16.528 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/PrivilegeGate$State.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt
+2026-11-13 06:47:16.529 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/PrivilegeGate$Result.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt
+2026-11-13 06:47:16.529 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/device/PrivilegeGate$Result$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt
+2026-11-13 06:47:16.529 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.529 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$executeExploit$2.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.530 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$executeExploit$2$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.530 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$bindAndRun$service$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.530 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$bindAndRun$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.530 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$listManagerPackages$service$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.531 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$listManagerPackages$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.531 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$awaitConnect$2$conn$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.531 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$awaitConnect$2$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.531 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$awaitRun$2$callback$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.532 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.532 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/ExploitEngine$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+2026-11-13 06:47:16.532 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/FailureDiagnoser.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/FailureDiagnoser.kt
+2026-11-13 06:47:16.532 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/FailureDiagnoser$Diagnosis.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/FailureDiagnoser.kt
+2026-11-13 06:47:16.532 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/engine/FailureDiagnoser$Rule.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/FailureDiagnoser.kt
+2026-11-13 06:47:16.533 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsuSource.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+2026-11-13 06:47:16.533 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsuSource$DeviceManager.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+2026-11-13 06:47:16.533 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsuSource$Bundled.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+2026-11-13 06:47:16.533 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsuSource$Unavailable.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+2026-11-13 06:47:16.534 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsuResolver.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+2026-11-13 06:47:16.534 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsuResolver$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+2026-11-13 06:47:16.534 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsudStage.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+2026-11-13 06:47:16.534 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsudStage$findKsudInDir$$inlined$sortedByDescending$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+2026-11-13 06:47:16.535 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsudStage$ManagerEntry.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+2026-11-13 06:47:16.535 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsudStage$Outcome.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+2026-11-13 06:47:16.535 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsudStage$Outcome$Ok.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+2026-11-13 06:47:16.535 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ksu/KsudStage$Outcome$Fail.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+2026-11-13 06:47:16.536 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/model/KernelProfile.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/KernelProfile.kt
+2026-11-13 06:47:16.536 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/model/ShizukuStatus.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/ShizukuStatus.kt
+2026-11-13 06:47:16.536 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/model/StageState.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageState.kt
+2026-11-13 06:47:16.536 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/model/StageTracker.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageTracker.kt
+2026-11-13 06:47:16.537 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/model/StageTracker$Snapshot.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageTracker.kt
+2026-11-13 06:47:16.537 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/model/StageTracker$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageTracker.kt
+2026-11-13 06:47:16.537 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/native/KernelProfileSerializer.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/KernelProfileSerializer.kt
+2026-11-13 06:47:16.537 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/native/NativeContract.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt
+2026-11-13 06:47:16.537 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/native/NativeContract$Stage.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt
+2026-11-13 06:47:16.538 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/native/NativeContract$Status.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt
+2026-11-13 06:47:16.538 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/native/NativeContract$Env.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt
+2026-11-13 06:47:16.538 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/shizuku/Cve98260UserService.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/Cve98260UserService.kt
+2026-11-13 06:47:16.538 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/shizuku/Cve98260UserService$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/Cve98260UserService.kt
+2026-11-13 06:47:16.539 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager.kt
+2026-11-13 06:47:16.539 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager$Companion.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager.kt
+2026-11-13 06:47:16.539 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogTone.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogTone.kt
+2026-11-13 06:47:16.539 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogToneKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogTone.kt
+2026-11-13 06:47:16.540 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/ComposableSingletons$LogViewerScreenKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.540 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.540 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$LogViewerScreen$runs$2$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.541 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$LogViewerScreen$runs$2$1$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.541 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$RunDetailPage$1$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.541 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$RunDetailPage$1$1$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.541 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$LogViewerScreen$2$1$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.541 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$LogViewerScreen$2$1$1$text$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.542 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/LogViewerScreenKt$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+2026-11-13 06:47:16.542 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainActivity.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainActivity.kt
+2026-11-13 06:47:16.542 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/ComposableSingletons$MainActivityKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainActivity.kt
+2026-11-13 06:47:16.542 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/Screen.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.542 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/ComposableSingletons$MainScreenKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.543 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.543 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$2$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.543 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$3$3$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.543 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$4$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.543 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$5$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.544 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$6$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.544 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$7$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.544 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$8$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.544 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$CountdownConfirmButton$1$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.545 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$MainContent$lambda$0$0$$inlined$onDispose$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.545 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$TerminalPanel$lambda$1$1$1$0$$inlined$items$default$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.545 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$TerminalPanel$lambda$1$1$1$0$$inlined$items$default$2.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.546 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$TerminalPanel$lambda$1$1$1$0$$inlined$items$default$3.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.546 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$TerminalPanel$lambda$1$1$1$0$$inlined$items$default$4.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.546 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/MainScreenKt$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+2026-11-13 06:47:16.546 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/ComposableSingletons$SettingsScreenKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/SettingsScreen.kt
+2026-11-13 06:47:16.546 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/SettingsScreenKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/SettingsScreen.kt
+2026-11-13 06:47:16.547 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/theme/CvePalette.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/theme/Theme.kt
+2026-11-13 06:47:16.547 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/ui/theme/ThemeKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/theme/Theme.kt
+2026-11-13 06:47:16.547 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/LogEntry.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.547 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ManagerOption.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.547 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitUiState.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.547 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.548 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$detectKsuSource$2.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.548 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$detectKsuSourceBlocking$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.548 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$refreshStatus$2.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.548 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$startExploit$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.548 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$startExploit$1$2.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.548 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$importTextFromUri$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.549 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$importImageFromUri$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.549 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$startTicker$1.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.549 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$WhenMappings.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.549 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$2.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.549 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel$3.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.550 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/EternalTimes/GhostKey/viewmodel/ExploitViewModelKt.class
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+2026-11-13 06:47:16.550 [daemon] INFO: Message: output: output:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/META-INF/app.kotlin_module
+Sources:
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageTracker.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/NativeContract.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/PrivilegeGate.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/StageState.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Quietly.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/viewmodel/ExploitViewModel.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainScreen.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogViewerScreen.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/theme/Theme.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/AssetConfigLoader.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/ShizukuStatus.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceProfile.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/HoconSupport.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/BuiltinProfileCatalog.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/Cve98260Application.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/Profile.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsuResolver.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ksu/KsudStage.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/LegacyProfileConverter.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/LogTone.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/ExploitEngine.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileImportManager.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/MainActivity.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/KallsymsExtractor.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/model/KernelProfile.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/ImgToProfile.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/RunLogStore.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/Cve98260UserService.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/ui/SettingsScreen.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ProfileRepository.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/UserProfileStore.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/AllocCallSiteResolver.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/shizuku/ShizukuPermissionManager.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/data/ota/BootImageParser.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/KernelProbe.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/native/KernelProfileSerializer.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/engine/FailureDiagnoser.kt
+/data/data/com.androidharness.app/files/github-projects/CVE-2026-98260-GhostKey-0fdaeb72/app/src/main/kotlin/com/EternalTimes/GhostKey/device/DeviceBinding.kt
+2026-11-13 06:47:17.019 [compiler] INFO: Done with result 0
+2026-11-13 06:47:17.098 [compiler] INFO: cleaning after session 1
